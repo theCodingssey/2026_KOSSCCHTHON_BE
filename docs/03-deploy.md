@@ -85,7 +85,9 @@ chmod +x /home/fbwoals/icelink/run.sh
 cd /home/fbwoals/icelink
 ./run.sh            # 포그라운드. 로그가 터미널에 바로 보임. 첫 실행 확인용
 ./run.sh --bg       # 백그라운드. SSH 끊어도 유지. 로그는 app.log
-./run.sh --stop     # 백그라운드 종료
+./run.sh --stop     # 종료 (app.pid 가 틀려도 프로세스 이름으로 찾아 종료)
+./run.sh --restart  # 종료 후 재시작 — jar 교체 뒤에는 이걸 쓴다
+./run.sh --status   # 실행 여부·PID
 tail -f app.log
 ```
 
@@ -111,6 +113,15 @@ sudo systemctl status icelink
 journalctl -u icelink -f
 ```
 재배포: jar 덮어쓰기 후 `sudo systemctl restart icelink`. `run.sh --bg` 와 systemd 를 동시에 쓰면 포트가 충돌하므로 하나만 쓴다.
+
+### 4.4 jar 교체 순서
+
+```bash
+./run.sh --stop      # 1. 먼저 종료 (실행 중인 파일을 지워도 프로세스는 살아 있다)
+# 2. scp 로 새 Icelink.jar 업로드
+./run.sh --bg        # 3. 시작
+```
+또는 새 jar 를 올린 뒤 `./run.sh --restart` 한 번으로 끝낼 수 있다. 시작 직후 4초 안에 프로세스가 죽으면 스크립트가 로그 마지막 30줄을 보여준다.
 
 ## 5. 동작 확인
 
@@ -144,5 +155,5 @@ curl -s http://localhost:8080/swagger-ui.html -o /dev/null -w "%{http_code}\n"
 | `Connection refused` (DB) | `ICELINK_DB_HOST=localhost` 로 안 되면 `fbwoalszz.iptime.org` 로 변경. PostgreSQL `listen_addresses`, `pg_hba.conf` 확인 |
 | `password authentication failed` | env 파일 값에 특수문자가 있으면 작은따옴표로 감쌌는지 확인 |
 | `UnsupportedClassVersionError` | 서버 Java 가 25 미만. JDK 25 설치 또는 `build.gradle` toolchain 을 서버 버전으로 낮춤 |
-| `Address already in use` | 이전 프로세스가 살아 있음. `./run.sh --stop` 또는 `systemctl stop icelink` |
+| `Port 8080 was already in use` | 이전 jar 프로세스가 살아 있음 (jar 를 지워도 프로세스는 남는다). `./run.sh --stop` 이 "not running" 이라고 하면 `pgrep -af Icelink.jar` 또는 `ss -ltnp | grep 8080` 으로 PID 를 찾아 `kill <PID>` 후 `./run.sh --bg` |
 | `run.sh: /usr/bin/env: 'bash\r'` | CRLF 로 올라감. `sed -i 's/\r$//' run.sh` 실행 (저장소 `.gitattributes` 로 재발 방지) |
