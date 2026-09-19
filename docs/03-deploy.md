@@ -65,7 +65,7 @@ echo "pw length: ${#ICELINK_DB_PASSWORD}"     # 비밀번호 자체는 출력하
 ## 3. 빌드와 업로드 (로컬 Windows)
 
 ```powershell
-cd D:\Code\2026_KOSSCCHTHON_BE\Icelink
+cd D:\Code\2026_KOSSCCHTHON\2026_KOSSCCHTHON_BE\Icelink
 .\gradlew.bat clean bootJar
 
 scp build\libs\Icelink-0.0.1-SNAPSHOT.jar fbwoals@fbwoalszz.iptime.org:/home/fbwoals/icelink/Icelink.jar
