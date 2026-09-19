@@ -414,7 +414,7 @@ SSE: 방 전체에 `TEAM_BUILDING_COMPLETED` 발행.
 ```
 
 #### `DELETE /host/rooms/{code}/participants/{participantId}` — 강퇴
-**204**. WAITING 상태만. 참가자 상태 `LEFT`, 이후 이 방의 참가자 API는 `403`. 재입장은 허용(새 participant 행). SSE `PARTICIPANT_LEFT`.
+**204**. WAITING 상태만. 참가자 상태 `LEFT`, 이후 이 방의 참가자 API는 `403`. 재입장 허용(기존 행을 `JOINED`로 재활성화, 설문 초기화). SSE `PARTICIPANT_LEFT`.
 
 ---
 
