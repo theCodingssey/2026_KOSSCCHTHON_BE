@@ -46,7 +46,8 @@ public class JpaRoomParticipantQuery implements RoomParticipantQuery {
     public List<RoomParticipantSummary> listActive(Long roomId) {
         return participantRepository.findAllByRoom_IdAndStatusNotOrderByJoinedAtAsc(roomId, ParticipantStatus.LEFT)
                 .stream()
-                .map(p -> new RoomParticipantSummary(p.getId(), p.getNickname(), p.getStatus().name(), null, p.getJoinedAt()))
+                .map(p -> new RoomParticipantSummary(p.getId(), p.getNickname(), p.getStatus().name(),
+                        p.getTeam() == null ? null : p.getTeam().getTeamNo(), p.getJoinedAt()))
                 .toList();
     }
 
@@ -54,6 +55,7 @@ public class JpaRoomParticipantQuery implements RoomParticipantQuery {
     @Transactional(readOnly = true)
     public Optional<ActiveParticipation> findActiveParticipation(String userKey) {
         return participantRepository.findActiveParticipation(userKey, RoomStatus.ACTIVE)
-                .map(p -> new ActiveParticipation(p.getRoomId(), p.getId(), p.getStatus().name(), null));
+                .map(p -> new ActiveParticipation(p.getRoomId(), p.getId(), p.getStatus().name(),
+                        p.getTeam() == null ? null : p.getTeam().getId()));
     }
 }

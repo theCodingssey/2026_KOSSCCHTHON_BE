@@ -21,6 +21,7 @@ import com.kosscchthon.Icelink.realtime.RoomEventType;
 import com.kosscchthon.Icelink.room.Room;
 import com.kosscchthon.Icelink.room.RoomAccessChecker;
 import com.kosscchthon.Icelink.room.RoomRepository;
+import com.kosscchthon.Icelink.team.Team;
 import com.kosscchthon.Icelink.survey.dto.SurveyResponse;
 import com.kosscchthon.Icelink.survey.dto.SurveySubmitRequest;
 import com.kosscchthon.Icelink.survey.dto.SurveySubmitRequest.PersonalityAnswer;
@@ -45,6 +46,8 @@ class SurveyServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-19T10:00:00Z");
     private static final User HOST = User.register("a".repeat(64), "호스트", NOW);
     private static final User GUEST = User.register("b".repeat(64), "민수", NOW);
+    private static final Team TEAM = Team.create(
+            Room.create("TTTTTT", HOST, "t", "s", 4, List.of(), NOW, Duration.ofHours(24)), 1, InterestCategory.GAME, false, 18.0);
 
     @Mock RoomRepository roomRepository;
     @Mock ParticipantRepository participantRepository;
@@ -163,7 +166,7 @@ class SurveyServiceTest {
     void rejectedWhenParticipantAlreadyAssigned() {
         me.submitPersonality(SurveyTestFixtures.uniform(3));
         me.selectCategory(InterestCategory.GAME);
-        me.assign();
+        me.assignTo(TEAM);
 
         assertThatThrownBy(() -> service.submit("K7M3PQ", GUEST, new SurveySubmitRequest(null, InterestCategory.FOOD)))
                 .isInstanceOfSatisfying(IcelinkException.class,

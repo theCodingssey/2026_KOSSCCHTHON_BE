@@ -4,6 +4,7 @@ import com.kosscchthon.Icelink.common.error.ErrorCode;
 import com.kosscchthon.Icelink.common.error.IcelinkException;
 import com.kosscchthon.Icelink.room.Room;
 import com.kosscchthon.Icelink.survey.PersonalitySurvey;
+import com.kosscchthon.Icelink.team.Team;
 import com.kosscchthon.Icelink.user.User;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -79,6 +80,11 @@ public class Participant {
     @MapKeyColumn(name = "question_no")
     @Column(name = "score", nullable = false)
     private Map<Integer, Integer> personalityAnswers = new HashMap<>();
+
+    /** 배정된 팀. 팀 빌딩 전 null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "team_id")
+    private Team team;
 
     @Column(name = "joined_at", nullable = false)
     private Instant joinedAt;
@@ -180,12 +186,13 @@ public class Participant {
         refreshSurveyStatus();
     }
 
-    /** 3.4 팀 빌딩: 배정 완료. */
-    public void assign() {
+    /** 3.4 팀 빌딩: 팀에 배정. SURVEY_DONE(기본) 또는 JOINED/LATE(미완료 포함 옵션) 에서 ASSIGNED 로. */
+    public void assignTo(Team team) {
         if (status != ParticipantStatus.SURVEY_DONE && status != ParticipantStatus.LATE && status != ParticipantStatus.JOINED) {
             throw new IcelinkException(ErrorCode.INVALID_STATE_TRANSITION,
                     "배정할 수 없는 참가자 상태입니다: " + status);
         }
+        this.team = team;
         this.status = ParticipantStatus.ASSIGNED;
     }
 

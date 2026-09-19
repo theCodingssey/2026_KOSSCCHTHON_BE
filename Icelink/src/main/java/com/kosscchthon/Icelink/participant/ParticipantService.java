@@ -12,6 +12,7 @@ import com.kosscchthon.Icelink.realtime.RoomEventType;
 import com.kosscchthon.Icelink.room.Room;
 import com.kosscchthon.Icelink.room.RoomAccessChecker;
 import com.kosscchthon.Icelink.room.RoomStatus;
+import com.kosscchthon.Icelink.team.Team;
 import com.kosscchthon.Icelink.user.User;
 import com.kosscchthon.Icelink.user.UserRepository;
 import java.time.Clock;
@@ -106,7 +107,7 @@ public class ParticipantService {
         Room room = roomAccessChecker.getByCode(code);
         Participant me = participantAccessChecker.requireParticipant(room, user.getUserKey());
         int count = participantRepository.countByRoom_IdAndStatusNot(room.getId(), ParticipantStatus.LEFT);
-        return ParticipantMeResponse.of(me, room, count, null); // team 은 3.4 에서 채운다
+        return ParticipantMeResponse.of(me, room, count, teamViewOf(me));
     }
 
     /** DELETE /rooms/{code}/me — 나가기 (P-04). WAITING 에서만. */
@@ -124,7 +125,9 @@ public class ParticipantService {
         Room room = roomAccessChecker.requireHost(code, host.getUserKey());
         return participantRepository.findAllByRoom_IdAndStatusNotOrderByJoinedAtAsc(room.getId(), ParticipantStatus.LEFT)
                 .stream()
-                .map(p -> HostParticipantResponse.from(p, null, null)) // 팀 정보는 3.4 에서 채운다
+                .map(p -> HostParticipantResponse.from(p,
+                        p.getTeam() == null ? null : p.getTeam().getId(),
+                        p.getTeam() == null ? null : p.getTeam().getTeamNo()))
                 .toList();
     }
 
@@ -140,6 +143,20 @@ public class ParticipantService {
     }
 
     // ---- 내부 ----
+
+    /** 배정된 팀이 있으면 팀 요약 + 팀원 목록(isMe 표시), 없으면 null. */
+    private ParticipantMeResponse.TeamView teamViewOf(Participant me) {
+        Team team = me.getTeam();
+        if (team == null) {
+            return null;
+        }
+        List<ParticipantMeResponse.TeamView.Member> members = participantRepository.findAllByTeam_IdOrderByIdAsc(team.getId())
+                .stream()
+                .map(p -> new ParticipantMeResponse.TeamView.Member(p.getId(), p.getNickname(), p.getId().equals(me.getId())))
+                .toList();
+        return new ParticipantMeResponse.TeamView(team.getId(), team.getTeamNo(), team.getName(),
+                team.getStatus().name(), team.getCategory(), members);
+    }
 
     private void markLeft(Room room, Participant participant) {
         Instant now = Instant.now(clock);

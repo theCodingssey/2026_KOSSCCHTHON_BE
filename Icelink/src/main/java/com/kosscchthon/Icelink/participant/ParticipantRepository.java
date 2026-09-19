@@ -3,7 +3,9 @@ package com.kosscchthon.Icelink.participant;
 import com.kosscchthon.Icelink.room.RoomStatus;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,21 @@ public interface ParticipantRepository extends JpaRepository<Participant, Long> 
     int countByRoom_IdAndStatusNot(Long roomId, ParticipantStatus excluded);
 
     int countByRoom_IdAndStatus(Long roomId, ParticipantStatus status);
+
+    /** 팀원 목록 (ID 순) */
+    List<Participant> findAllByTeam_IdOrderByIdAsc(Long teamId);
+
+    /** 방의 배정된 참가자 전체 (팀별 그룹핑용) */
+    List<Participant> findAllByRoom_IdAndTeamIsNotNullOrderByIdAsc(Long roomId);
+
+    @Query("select p.team.id, count(p) from Participant p where p.room.id = :roomId and p.team is not null group by p.team.id")
+    List<Object[]> countMembersByTeamRaw(@Param("roomId") Long roomId);
+
+    /** teamId → 팀원 수 */
+    default Map<Long, Long> countMembersByTeam(Long roomId) {
+        return countMembersByTeamRaw(roomId).stream()
+                .collect(Collectors.toMap(r -> (Long) r[0], r -> (Long) r[1]));
+    }
 
     /** LEFT 제외, 입장 순 */
     List<Participant> findAllByRoom_IdAndStatusNotOrderByJoinedAtAsc(Long roomId, ParticipantStatus excluded);

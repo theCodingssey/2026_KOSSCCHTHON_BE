@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.kosscchthon.Icelink.common.error.ErrorCode;
 import com.kosscchthon.Icelink.common.error.IcelinkException;
 import com.kosscchthon.Icelink.room.Room;
+import com.kosscchthon.Icelink.team.Team;
 import com.kosscchthon.Icelink.survey.SurveyTestFixtures;
 import com.kosscchthon.Icelink.user.User;
 import java.time.Duration;
@@ -19,6 +20,7 @@ class ParticipantTest {
     private static final User HOST = User.register("a".repeat(64), "호스트", NOW);
     private static final User GUEST = User.register("b".repeat(64), "민수", NOW);
     private static final Room ROOM = Room.create("K7M3PQ", HOST, "t", "s", 4, List.of(), NOW, Duration.ofHours(24));
+    private static final Team TEAM = Team.create(ROOM, 1, InterestCategory.GAME, false, 18.0);
 
     @Test
     void join_startsJoinedWithoutSurvey() {
@@ -90,7 +92,7 @@ class ParticipantTest {
         Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
         p.submitPersonality(SurveyTestFixtures.answers(4, 3, 3, 4, 3, 3));
         p.selectCategory(InterestCategory.FOOD);
-        p.assign();
+        p.assignTo(TEAM);
         assertThat(p.getStatus()).isEqualTo(ParticipantStatus.ASSIGNED);
 
         assertThatThrownBy(() -> p.leave(NOW))

@@ -224,7 +224,7 @@ userKey = lowercase_hex( SHA-256( UTF-8(trim(name)) || String(nonce) ) )   // no
 users 1 ──── * rooms          (host_user_id)
 users 1 ──── * participants   (user_id)
 rooms 1 ──── * participants
-rooms 1 ──── * teams 1 ──── * team_members * ──── 1 participants
+rooms 1 ──── * teams 1 ──── * participants   (participants.team_id, 팀 빌딩 후 채워짐)
 teams 1 ──── * team_questions 1 ──── 0..1 team_answers
 participants 1 ──── * survey_answers
 rooms 1 ──── * room_events   (SSE 재전송용)
@@ -261,6 +261,7 @@ rooms 1 ──── * room_events   (SSE 재전송용)
 | status | varchar(20) | JOINED / SURVEY_DONE / ASSIGNED / LATE / LEFT |
 | interest_category | varchar(10) NULL | MOVIE / GAME / FOOD / TRAVEL / SPORTS. 1개 선택 |
 | extroversion_score | smallint NULL | 6~30, 성격 답변 6개 합. 성격 제출 시 계산 |
+| team_id | FK teams NULL | 팀 빌딩 후 배정된 팀. 조인 테이블 대신 참가자 행에 직접 연결 |
 | joined_at, left_at | timestamptz | |
 
 ### survey_answers
@@ -284,12 +285,6 @@ rooms 1 ──── * room_events   (SSE 재전송용)
 | question_count | smallint | AI 질문 수 |
 | version | int | 낙관적 락 |
 | started_at, finished_at | timestamptz | |
-
-### team_members
-| 컬럼 | 타입 |
-|---|---|
-| team_id | FK teams — 복합 PK (team_id, participant_id) |
-| participant_id | FK participants UNIQUE (같은 방에선 한 팀만) |
 
 ### team_questions
 | 컬럼 | 타입 | 설명 |
