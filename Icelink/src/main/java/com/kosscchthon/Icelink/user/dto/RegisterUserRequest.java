@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "유저 등록 요청. 서버가 sha256(trim(name) + nonce) 로 키를 생성해 돌려준다.")
+@Schema(description = "유저 등록 요청. 서버가 256-bit 난수 키(64자 hex)를 생성해 돌려준다.")
 public record RegisterUserRequest(
         @Schema(description = "표시 이름 (1~12자)", example = "민수")
         @NotBlank

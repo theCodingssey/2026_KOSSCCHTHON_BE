@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({WebMvcConfig.class, UserKeyInterceptor.class, CurrentUserArgumentResolver.class})
 class UserControllerTest {
 
-    private static final String KEY = UserKeys.derive("민수", 42);
+    private static final String KEY = "3a7f0d2e9b6c4f18a5d7e2c1b0f9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
     private static final Instant NOW = Instant.parse("2026-09-19T10:00:00Z");
     private static final MediaType PROBLEM_JSON = MediaType.APPLICATION_PROBLEM_JSON;
 

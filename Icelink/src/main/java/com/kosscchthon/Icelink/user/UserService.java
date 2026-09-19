@@ -7,16 +7,10 @@ import com.kosscchthon.Icelink.user.dto.RegisterUserRequest;
 import com.kosscchthon.Icelink.user.dto.UserResponse;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
-import java.util.Set;
 import java.util.random.RandomGenerator;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -34,39 +28,19 @@ public class UserService {
 
     /**
      * POST /users — 유저 등록.
-     * 서버가 난수(1~100)를 뽑아 sha256(name + nonce) 키를 만들고, 아직 쓰이지 않은 키를 골라 저장한다 (U-01~U-03).
-     * 같은 이름의 후보 100개가 모두 사용 중이면 409 를 돌려준다.
+     * 서버가 256-bit 난수 키를 만들어 저장한다 (U-01~U-03). 이름은 표시용이며 유일하지 않아도 된다.
+     * 키 충돌은 확률적으로 일어나지 않지만, 만약 PK 충돌이 나면 409 로 재시도를 안내한다.
      */
     @Transactional
     public UserResponse register(RegisterUserRequest request) {
         String name = normalizeName(request.name());
-
-        String key = pickUnusedKey(name)
-                .orElseThrow(() -> new IcelinkException(ErrorCode.USER_KEY_CONFLICT,
-                        "같은 이름으로 만들 수 있는 키가 모두 사용 중입니다. 다른 이름을 입력해 주세요."));
+        String key = UserKeys.generate(random);
         try {
             User saved = userRepository.saveAndFlush(User.register(key, name, Instant.now(clock)));
             return UserResponse.from(saved);
         } catch (DataIntegrityViolationException e) {
-            // 후보 조회와 저장 사이에 다른 요청이 같은 키를 넣은 경우. 클라이언트가 재시도하면 다른 난수가 뽑힌다.
             throw new IcelinkException(ErrorCode.USER_KEY_CONFLICT, "키 생성이 충돌했습니다. 다시 시도해 주세요.");
         }
-    }
-
-    /** 후보 키 100개를 한 번의 조회로 확인하고, 비어 있는 것 중 하나를 무작위로 고른다. */
-    private Optional<String> pickUnusedKey(String name) {
-        List<String> candidates = IntStream.rangeClosed(UserKeys.NONCE_MIN, UserKeys.NONCE_MAX)
-                .mapToObj(nonce -> UserKeys.derive(name, nonce))
-                .collect(Collectors.toCollection(ArrayList::new));
-        Set<String> used = userRepository.findAllById(candidates).stream()
-                .map(User::getUserKey)
-                .collect(Collectors.toSet());
-        candidates.removeAll(used);
-        if (candidates.isEmpty()) {
-            return Optional.empty();
-        }
-        Collections.shuffle(candidates, Random.from(random));
-        return Optional.of(candidates.getFirst());
     }
 
     /**

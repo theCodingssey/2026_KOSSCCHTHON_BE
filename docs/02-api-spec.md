@@ -18,7 +18,7 @@
 X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 ```
 
-- 유저 키는 `POST /users` 에 이름을 보내면 **서버가** `sha256(trim(name) + nonce)` 로 생성해 돌려준다. 클라이언트는 이 값을 기기에 저장하고 이후 요청에 그대로 보낸다. 서버는 이 값을 `users.user_key` PK로 저장한다.
+- 유저 키는 `POST /users` 에 이름을 보내면 **서버가** 256-bit 난수(64자 hex)로 생성해 돌려준다. 클라이언트는 이 값을 기기에 저장하고 이후 요청에 그대로 보낸다. 서버는 이 값을 `users.user_key` PK로 저장한다.
 - 헤더가 없으면 `401 USER_KEY_REQUIRED`, 형식이 틀리면 `400 USER_KEY_INVALID_FORMAT`, 등록되지 않은 키면 `401 USER_NOT_FOUND`.
 - **역할은 방 단위로 DB에서 판정**한다.
 
@@ -54,7 +54,7 @@ X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 | 401 | `USER_KEY_REQUIRED` / `USER_NOT_FOUND` | 헤더 누락 / 미등록 키 |
 | 403 | `FORBIDDEN` | 호스트/참가자/팀원 아님 |
 | 404 | `ROOM_NOT_FOUND` / `TEAM_NOT_FOUND` / `QUESTION_NOT_FOUND` / `PARTICIPATION_NOT_FOUND` | |
-| 409 | `USER_KEY_CONFLICT` | 이름당 후보 키 100개가 모두 사용 중(다른 이름 안내) 또는 저장 직전 경합(같은 이름으로 재시도) |
+| 409 | `USER_KEY_CONFLICT` | 난수 키 PK 충돌(사실상 발생하지 않음). 같은 이름으로 재시도 |
 | 409 | `ROOM_NOT_WAITING` | WAITING 아닌 방에 입장/설문 |
 | 409 | `NICKNAME_DUPLICATED` | 닉네임 자동 변경 후보(2~99)까지 모두 사용 중 (일반 중복은 서버가 자동 변경) |
 | 409 | `HOST_CANNOT_JOIN` | 주최자가 자기 방에 참가 시도 |
@@ -92,7 +92,7 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
 | GET | `/health` | 없음 | 헬스체크 |
-| POST | `/users` | 없음 | 유저 등록 (클라이언트 생성 키 + 이름) |
+| POST | `/users` | 없음 | 유저 등록 (이름 → 서버가 난수 키 발급) |
 | GET | `/users/me` | 유저 | 내 정보 + 현재 진행 중인 방 (앱 기동 시 화면 복원) |
 | PATCH | `/users/me` | 유저 | 이름 변경 |
 | GET | `/users/me/rooms` | 유저 | 내가 주최/참가한 방 목록 [C] |
@@ -156,11 +156,11 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 1. name = 입력값                            // 서버가 trim, 1~12자 검증
 2. POST /users { name }
    - 201 → 응답의 userKey 를 flutter_secure_storage 에 저장, 완료
-   - 409 USER_KEY_CONFLICT → detail 에 따라 "다시 시도" 또는 "다른 이름을 입력해 주세요" 안내
+   - 409 USER_KEY_CONFLICT → "잠시 후 다시 시도" 안내 (같은 이름으로 재시도)
 3. 이후 모든 요청: X-User-Key: {userKey}
 ```
 
-클라이언트는 해시를 계산하지 않는다. 키 생성 규칙은 서버 내부 사항이다.
+클라이언트는 키를 계산하지 않는다. 키 생성 규칙은 서버 내부 사항이다.
 
 ---
 
@@ -175,10 +175,8 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | name | 필수, trim 후 1~12자 |
 
 **서버 동작**
-1. `sha256(trim(name) + nonce)` (nonce 1~100) 후보 키 100개 생성
-2. `users` 에서 후보 100개를 한 번에 조회해 사용 중인 키 제외
-3. 남은 키 중 하나를 무작위로 골라 저장
-4. 남은 키가 없으면 `409`
+1. `SecureRandom` 32바이트 → 소문자 hex 64자 키 생성 (이름과 무관)
+2. `users` 에 저장. PK 충돌이면 `409` (확률적으로 발생하지 않음)
 
 **201**
 ```json
@@ -188,7 +186,7 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
   "createdAt": "2026-09-19T10:00:00Z"
 }
 ```
-**409** `USER_KEY_CONFLICT` — 같은 이름의 후보 키 100개가 모두 사용 중(다른 이름 필요), 또는 저장 직전 경합(같은 이름으로 재시도 가능). `detail` 문구로 구분
+**409** `USER_KEY_CONFLICT` — 저장 시 PK 충돌. 같은 이름으로 재시도하면 된다
 **400** `VALIDATION_ERROR` — 이름 누락/길이 초과
 
 ---
@@ -1062,7 +1060,7 @@ teamNo 를 1부터 순차 부여 (카테고리 순 → 팀 순), name = "{teamNo
 - 패키지: `user`, `room`, `participant`, `survey`, `team`, `question`, `realtime`, `ai`, `common` (도메인별 수직 슬라이스)
 - 인증: `UserKeyInterceptor` 하나가 `X-User-Key`(또는 SSE용 `?userKey=`) 형식 검증 → `users` 조회 → `last_seen_at` 갱신 → 요청 속성에 `User` 저장. `@CurrentUser User user` 커스텀 `ArgumentResolver`로 주입
 - 권한: 호스트/참가자/팀원 판정은 각 서비스 메서드 진입부에서 `RoomAccessChecker.requireHost(room, user)` / `requireParticipant(room, user)` / `requireTeamMemberOrHost(team, user)` 호출. 인터셉터에서 하지 않는 이유는 경로마다 방·팀 로딩이 필요해서 서비스 계층 조회와 중복되기 때문
-- 유저 키 검증(U-04): `POST /users` 에서 `nonce` 로 `sha256(name + nonce)` 1회 계산해 비교. `MessageDigest.getInstance("SHA-256")` + `HexFormat.of()`
+- 유저 키 생성(U-02): `SecureRandom.nextBytes(32)` + `HexFormat.of().withLowerCase()`. 형식 검증(U-04)은 `^[0-9a-f]{64}$`
 - Rate limit: `/users/**` 는 `Bucket4j` 기반 IP당 분당 30회 필터 (또는 해커톤 범위에선 생략)
 - SSE: `SseEmitter` + 방/팀 단위 `ConcurrentHashMap<Long, List<SseEmitter>>` 레지스트리. `room_events` INSERT 후 발행 (재전송 근거)
 - 상태 전이: `TeamStatus` enum 내부에 `canTransitionTo()` 정의, 서비스에서 `@Version` 낙관적 락으로 중복 전이 차단

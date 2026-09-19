@@ -10,7 +10,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 유저. 회원가입 없이 클라이언트가 만든 sha256(name + nonce) 키가 PK 다.
+ * 유저. 회원가입 없이 서버가 발급한 256-bit 난수 키(64자 hex)가 PK 다.
  * 역할(호스트/참가자)은 여기 없고 방 단위로 판정한다.
  */
 @Entity

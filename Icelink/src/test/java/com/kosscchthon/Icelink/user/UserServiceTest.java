@@ -3,7 +3,6 @@ package com.kosscchthon.Icelink.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -20,13 +19,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import java.util.Random;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -41,7 +35,7 @@ class UserServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-09-19T10:00:00Z");
     private static final String NAME = "민수";
-    private static final String KEY = UserKeys.derive(NAME, 42);
+    private static final String KEY = "3a7f0d2e9b6c4f18a5d7e2c1b0f9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
 
     @Mock UserRepository userRepository;
     @Mock ActiveRoomProvider activeRoomProvider;
@@ -58,18 +52,11 @@ class UserServiceTest {
                 new Random(7));
     }
 
-    private static Set<String> allCandidateKeys(String name) {
-        return IntStream.rangeClosed(UserKeys.NONCE_MIN, UserKeys.NONCE_MAX)
-                .mapToObj(n -> UserKeys.derive(name, n))
-                .collect(Collectors.toSet());
-    }
-
     @Nested
     class Register {
 
         @Test
-        void generatesKeyFromTrimmedNameAndOneOfHundredNonces() {
-            when(userRepository.findAllById(anyIterable())).thenReturn(List.of());
+        void generatesRandom64HexKeyAndTrimsName() {
             when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
             UserResponse res = service.register(new RegisterUserRequest("  " + NAME + " "));
@@ -77,53 +64,34 @@ class UserServiceTest {
             assertThat(res.name()).isEqualTo(NAME);
             assertThat(res.createdAt()).isEqualTo(NOW);
             assertThat(UserKeys.isValidFormat(res.userKey())).isTrue();
-            assertThat(allCandidateKeys(NAME)).contains(res.userKey());
         }
 
         @Test
-        void checksAllHundredCandidatesInOneQuery() {
-            when(userRepository.findAllById(anyIterable())).thenReturn(List.of());
+        void keyDoesNotDependOnNameAndDiffersPerRegistration() {
+            when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            UserResponse first = service.register(new RegisterUserRequest(NAME));
+            UserResponse second = service.register(new RegisterUserRequest(NAME));
+
+            // 같은 이름으로 몇 번 등록해도 서로 다른 키가 나온다 (이름당 100개 제한 없음)
+            assertThat(first.userKey()).isNotEqualTo(second.userKey());
+        }
+
+        @Test
+        void savesExactlyOnceWithoutLookingUpCandidates() {
             when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
             service.register(new RegisterUserRequest(NAME));
 
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<Iterable<String>> captor = ArgumentCaptor.forClass(Iterable.class);
-            verify(userRepository).findAllById(captor.capture());
-            Set<String> queried = StreamSupport.stream(captor.getValue().spliterator(), false)
-                    .collect(Collectors.toSet());
-            assertThat(queried).isEqualTo(allCandidateKeys(NAME));
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userRepository).saveAndFlush(captor.capture());
+            verify(userRepository, never()).findAllById(any());
+            assertThat(captor.getValue().getName()).isEqualTo(NAME);
+            assertThat(UserKeys.isValidFormat(captor.getValue().getUserKey())).isTrue();
         }
 
         @Test
-        void skipsKeysAlreadyInUse() {
-            // 42번 이외 후보를 모두 사용 중으로 만들면 42번 키만 남는다
-            List<User> used = allCandidateKeys(NAME).stream()
-                    .filter(k -> !k.equals(KEY))
-                    .map(k -> User.register(k, NAME, NOW))
-                    .toList();
-            when(userRepository.findAllById(anyIterable())).thenReturn(used);
-            when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            UserResponse res = service.register(new RegisterUserRequest(NAME));
-
-            assertThat(res.userKey()).isEqualTo(KEY);
-        }
-
-        @Test
-        void conflictsWhenAllHundredKeysAreTaken() {
-            List<User> used = allCandidateKeys(NAME).stream().map(k -> User.register(k, NAME, NOW)).toList();
-            when(userRepository.findAllById(anyIterable())).thenReturn(used);
-
-            assertThatThrownBy(() -> service.register(new RegisterUserRequest(NAME)))
-                    .isInstanceOfSatisfying(IcelinkException.class,
-                            e -> assertThat(e.code()).isEqualTo(ErrorCode.USER_KEY_CONFLICT));
-            verify(userRepository, never()).saveAndFlush(any());
-        }
-
-        @Test
-        void conflictsWhenInsertRacesWithAnotherRequest() {
-            when(userRepository.findAllById(anyIterable())).thenReturn(List.of());
+        void conflictsWhenInsertCollidesOnPrimaryKey() {
             when(userRepository.saveAndFlush(any(User.class))).thenThrow(new DataIntegrityViolationException("dup"));
 
             assertThatThrownBy(() -> service.register(new RegisterUserRequest(NAME)))
@@ -136,7 +104,7 @@ class UserServiceTest {
             assertThatThrownBy(() -> service.register(new RegisterUserRequest("   ")))
                     .isInstanceOfSatisfying(IcelinkException.class,
                             e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_ERROR));
-            verify(userRepository, never()).findAllById(anyIterable());
+            verify(userRepository, never()).saveAndFlush(any());
         }
     }
 

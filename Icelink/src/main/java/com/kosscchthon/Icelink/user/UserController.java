@@ -35,8 +35,8 @@ public class UserController {
     @SecurityRequirements
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "유저 등록", description = "이름만 보내면 서버가 sha256(trim(name) + nonce) 키를 생성해 돌려준다. 클라이언트는 이 키를 저장한다. "
-            + "409 USER_KEY_CONFLICT 면 다시 시도하거나 다른 이름을 쓴다.")
+    @Operation(summary = "유저 등록", description = "이름만 보내면 서버가 256-bit 난수 키(64자 hex)를 생성해 돌려준다. 클라이언트는 이 키를 저장한다. "
+            + "같은 이름이 몇 명이든 등록된다. 409 USER_KEY_CONFLICT 는 PK 충돌(사실상 발생하지 않음)이며 다시 시도하면 된다.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "등록 완료"),
             @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR"),
