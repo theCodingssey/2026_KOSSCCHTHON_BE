@@ -88,6 +88,7 @@ class TeamSessionServiceTest {
         member.assignTo(team);
 
         lenient().when(teamRepository.findById(501L)).thenReturn(Optional.of(team));
+        lenient().when(teamRepository.findByIdForUpdate(501L)).thenReturn(Optional.of(team));
         lenient().when(participantRepository.findByRoom_IdAndUser_UserKey(12L, MEMBER.getUserKey())).thenReturn(Optional.of(member));
         lenient().when(participantRepository.findByRoom_IdAndUser_UserKey(12L, OTHER.getUserKey())).thenReturn(Optional.empty());
         lenient().when(participantRepository.findByRoom_IdAndUser_UserKey(12L, HOST.getUserKey())).thenReturn(Optional.empty());

@@ -15,6 +15,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -62,6 +64,17 @@ public class GlobalExceptionHandler {
         pd.setInstance(URI.create(request.getRequestURI()));
         pd.setProperty("timestamp", Instant.now());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+    }
+
+    /**
+     * SSE 클라이언트가 연결을 끊었거나(화면 이동·새로고침) 30분 타임아웃이 된 경우.
+     * 응답은 이미 text/event-stream 으로 열려 있어 Problem Details 를 쓸 수 없고, 오류도 아니므로
+     * 본문 없이 조용히 끝낸다. 정리는 SseEmitterRegistry 의 onCompletion/onTimeout/onError 가 담당한다.
+     */
+    @ExceptionHandler({AsyncRequestNotUsableException.class, AsyncRequestTimeoutException.class})
+    public void handleAsyncDisconnect(Exception ex, HttpServletRequest request) {
+        log.debug("Async request ended ({}) on {} {}", ex.getClass().getSimpleName(),
+                request.getMethod(), request.getRequestURI());
     }
 
     @ExceptionHandler(Exception.class)

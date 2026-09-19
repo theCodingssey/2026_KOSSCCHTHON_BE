@@ -61,7 +61,7 @@ public class TeamSessionService {
     /** POST /teams/{id}/start — 모두 모였어요 (Q-01, Q-02). 멱등. */
     @Transactional
     public StartTeamResponse start(Long teamId, User user) {
-        Team team = teamAccessChecker.getTeam(teamId);
+        Team team = lockTeam(teamId);
         teamAccessChecker.requireMember(team, user.getUserKey());
         requireRoomInProgress(team);
 
@@ -141,7 +141,7 @@ public class TeamSessionService {
      */
     @Transactional
     public NextQuestionResponse next(Long teamId, User user, NextQuestionRequest request) {
-        Team team = teamAccessChecker.getTeam(teamId);
+        Team team = lockTeam(teamId);
         teamAccessChecker.requireMember(team, user.getUserKey());
         requireRoomInProgress(team);
         if (team.hasReachedQuestionLimit()) {
@@ -182,7 +182,7 @@ public class TeamSessionService {
     /** POST /teams/{id}/questions/{qid}/answer — 대화 텍스트 제출 (Q-05, Q-15). */
     @Transactional
     public SubmitAnswerResponse submitAnswer(Long teamId, Long questionId, User user, SubmitAnswerRequest request) {
-        Team team = teamAccessChecker.getTeam(teamId);
+        Team team = lockTeam(teamId);
         Participant me = teamAccessChecker.requireMember(team, user.getUserKey());
         requireRoomInProgress(team);
         if (team.getStatus() != TeamStatus.QUESTIONING) {
@@ -286,6 +286,16 @@ public class TeamSessionService {
             throw new IcelinkException(ErrorCode.INVALID_STATE_TRANSITION,
                     "진행 중인 방의 팀에서만 가능합니다. (방: " + team.getRoom().getStatus() + ", 팀: " + team.getStatus() + ")");
         }
+    }
+
+    /**
+     * 상태를 바꾸는 진입점(start/next/answer)은 팀 행을 잠그고 시작한다.
+     * 같은 팀의 다른 팀원 요청은 앞 트랜잭션이 끝날 때까지 기다린 뒤 최신 상태를 읽으므로,
+     * 두 번째 start 는 멱등(200), 두 번째 next/answer 는 409 로 정리된다 (500 아님).
+     */
+    private Team lockTeam(Long teamId) {
+        return teamRepository.findByIdForUpdate(teamId)
+                .orElseThrow(() -> new IcelinkException(ErrorCode.TEAM_NOT_FOUND, "존재하지 않는 팀입니다."));
     }
 
     private void publishTeamStatus(Team team, Instant now) {
