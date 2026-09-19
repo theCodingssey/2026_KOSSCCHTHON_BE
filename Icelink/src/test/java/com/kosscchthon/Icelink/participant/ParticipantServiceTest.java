@@ -207,17 +207,34 @@ class ParticipantServiceTest {
         }
 
         @Test
-        void duplicateNickname_isCaseInsensitive_andSuggestsAlternative() {
+        void duplicateNickname_isAutoRenamed_caseInsensitive() {
             when(participantRepository.findByRoom_IdAndUser_UserKey(12L, GUEST.getUserKey())).thenReturn(Optional.empty());
             when(participantRepository.findActiveParticipation(any(), any())).thenReturn(Optional.empty());
             when(participantRepository.countByRoom_IdAndStatusNot(anyLong(), any())).thenReturn(1);
             when(participantRepository.findActiveNicknamesLower(12L)).thenReturn(List.of("alex", "alex2"));
+            when(userRepository.getReferenceById(any())).thenReturn(GUEST);
+            when(participantRepository.saveAndFlush(any(Participant.class))).thenAnswer(inv -> withId(inv.getArgument(0), 101L));
 
-            assertThatThrownBy(() -> service.join("K7M3PQ", GUEST, new JoinRoomRequest("Alex")))
-                    .isInstanceOfSatisfying(IcelinkException.class, e -> {
-                        assertThat(e.code()).isEqualTo(ErrorCode.NICKNAME_DUPLICATED);
-                        assertThat(e.properties()).containsEntry("suggestedNickname", "Alex3");
-                    });
+            JoinResult result = service.join("K7M3PQ", GUEST, new JoinRoomRequest("Alex"));
+
+            assertThat(result.created()).isTrue();
+            assertThat(result.response().nickname()).isEqualTo("Alex3");
+        }
+
+        @Test
+        void duplicateNickname_withAllVariantsTaken_is409() {
+            when(participantRepository.findByRoom_IdAndUser_UserKey(12L, GUEST.getUserKey())).thenReturn(Optional.empty());
+            when(participantRepository.findActiveParticipation(any(), any())).thenReturn(Optional.empty());
+            when(participantRepository.countByRoom_IdAndStatusNot(anyLong(), any())).thenReturn(1);
+            List<String> taken = new java.util.ArrayList<>(List.of("a"));
+            for (int n = 2; n <= 99; n++) {
+                taken.add("a" + n);
+            }
+            when(participantRepository.findActiveNicknamesLower(12L)).thenReturn(taken);
+
+            assertThatThrownBy(() -> service.join("K7M3PQ", GUEST, new JoinRoomRequest("a")))
+                    .isInstanceOfSatisfying(IcelinkException.class,
+                            e -> assertThat(e.code()).isEqualTo(ErrorCode.NICKNAME_DUPLICATED));
             verify(participantRepository, never()).saveAndFlush(any());
         }
 

@@ -33,12 +33,12 @@ public class ParticipantController {
     private final ParticipantService participantService;
 
     @PostMapping("/participants")
-    @Operation(summary = "방 참가", description = "닉네임 생략 시 유저 이름. 이미 참가 중이면 200 으로 기존 정보를 돌려준다 (멱등).")
+    @Operation(summary = "방 참가", description = "닉네임 생략 시 유저 이름. 방 안에 같은 닉네임이 있으면 서버가 \"민수2\" 처럼 자동으로 바꿔 저장한다 (응답의 nickname 확인). 이미 참가 중이면 200 으로 기존 정보를 돌려준다 (멱등).")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "신규 참가"),
             @ApiResponse(responseCode = "200", description = "이미 참가 중"),
             @ApiResponse(responseCode = "404", description = "ROOM_NOT_FOUND"),
-            @ApiResponse(responseCode = "409", description = "ROOM_NOT_WAITING / ROOM_FULL / HOST_CANNOT_JOIN / ALREADY_IN_ANOTHER_ROOM / NICKNAME_DUPLICATED(suggestedNickname 포함)")
+            @ApiResponse(responseCode = "409", description = "ROOM_NOT_WAITING / ROOM_FULL / HOST_CANNOT_JOIN / ALREADY_IN_ANOTHER_ROOM / NICKNAME_DUPLICATED(자동 변경 후보 소진 시에만)")
     })
     public ResponseEntity<JoinRoomResponse> join(@PathVariable String code, @CurrentUser User user,
                                                  @Valid @RequestBody(required = false) JoinRoomRequest request) {

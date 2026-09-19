@@ -42,7 +42,7 @@ public class ParticipantService {
 
     /**
      * POST /rooms/{code}/participants — 방 참가 (P-01~P-03, P-06, R-08, R-09).
-     * 검사 순서: 이미 참가 중(멱등) → 주최자 → 방 상태 → 다른 방 참가 중 → 정원 → 닉네임 중복.
+     * 검사 순서: 이미 참가 중(멱등) → 주최자 → 방 상태 → 다른 방 참가 중 → 정원. 닉네임 중복은 거절 대신 자동 변경.
      */
     @Transactional
     public JoinResult join(String code, User user, JoinRoomRequest request) {
@@ -72,14 +72,8 @@ public class ParticipantService {
             throw new IcelinkException(ErrorCode.ROOM_FULL, "방 인원이 가득 찼습니다. (최대 " + Room.PARTICIPANT_LIMIT + "명)");
         }
 
-        String nickname = resolveNickname(request, user);
-        List<String> taken = participantRepository.findActiveNicknamesLower(room.getId());
-        if (taken.contains(nickname.toLowerCase(Locale.ROOT))) {
-            String suggested = NicknameSuggester.suggest(nickname, taken);
-            throw new IcelinkException(ErrorCode.NICKNAME_DUPLICATED,
-                    "이미 사용 중인 닉네임입니다.",
-                    suggested == null ? Map.of() : Map.of("suggestedNickname", suggested));
-        }
+        String requested = resolveNickname(request, user);
+        String nickname = resolveUniqueNickname(room, requested);
 
         Instant now = Instant.now(clock);
         Participant participant;
@@ -164,6 +158,23 @@ public class ParticipantService {
             throw new IcelinkException(ErrorCode.INVALID_STATE_TRANSITION,
                     message + " (현재 상태: " + room.getStatus() + ")");
         }
+    }
+
+    /**
+     * P-02: 방 안에서 닉네임이 겹치면 거절하지 않고 서버가 "민수2", "민수3" … 으로 바꿔 저장한다.
+     * 후보(2~99)가 모두 쓰인 극단적 경우에만 409.
+     */
+    private String resolveUniqueNickname(Room room, String requested) {
+        List<String> taken = participantRepository.findActiveNicknamesLower(room.getId());
+        if (!taken.contains(requested.toLowerCase(Locale.ROOT))) {
+            return requested;
+        }
+        String suggested = NicknameSuggester.suggest(requested, taken);
+        if (suggested == null) {
+            throw new IcelinkException(ErrorCode.NICKNAME_DUPLICATED,
+                    "같은 닉네임이 너무 많아 자동으로 바꿀 수 없습니다. 다른 닉네임을 입력해 주세요.");
+        }
+        return suggested;
     }
 
     /** 닉네임 생략 시 유저 이름. trim 후 1~12자. */

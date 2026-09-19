@@ -34,7 +34,7 @@ public class IcelinkException extends RuntimeException {
         return getMessage();
     }
 
-    /** Problem Details 본문에 추가로 실릴 확장 필드 (예: suggestedNickname, errors) */
+    /** Problem Details 본문에 추가로 실릴 확장 필드 (예: activeRoomCode, errors) */
     public Map<String, Object> properties() {
         return properties;
     }

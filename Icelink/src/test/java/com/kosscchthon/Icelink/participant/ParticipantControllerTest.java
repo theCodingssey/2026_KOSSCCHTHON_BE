@@ -27,7 +27,6 @@ import com.kosscchthon.Icelink.user.User;
 import com.kosscchthon.Icelink.user.UserService;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -97,9 +96,9 @@ class ParticipantControllerTest {
     }
 
     @Test
-    void join_duplicateNickname_is409WithSuggestion() throws Exception {
+    void join_duplicateNickname_isAutoRenamed_andReturnedInBody() throws Exception {
         when(participantService.join(eq("K7M3PQ"), any(User.class), any(JoinRoomRequest.class)))
-                .thenThrow(new IcelinkException(ErrorCode.NICKNAME_DUPLICATED, "dup", Map.of("suggestedNickname", "민수2")));
+                .thenReturn(new JoinResult(new JoinRoomResponse(102L, "민수2", ParticipantStatus.JOINED, ROOM), true));
 
         mockMvc.perform(post("/api/v1/rooms/K7M3PQ/participants")
                         .header(UserKeyInterceptor.HEADER, KEY)
@@ -107,9 +106,18 @@ class ParticipantControllerTest {
                         .content("""
                                 {"nickname":"민수"}
                                 """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nickname").value("민수2"));
+    }
+
+    @Test
+    void join_duplicateNickname_variantsExhausted_is409() throws Exception {
+        when(participantService.join(eq("K7M3PQ"), any(User.class), any(JoinRoomRequest.class)))
+                .thenThrow(new IcelinkException(ErrorCode.NICKNAME_DUPLICATED, "exhausted"));
+
+        mockMvc.perform(post("/api/v1/rooms/K7M3PQ/participants").header(UserKeyInterceptor.HEADER, KEY))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("NICKNAME_DUPLICATED"))
-                .andExpect(jsonPath("$.suggestedNickname").value("민수2"));
+                .andExpect(jsonPath("$.code").value("NICKNAME_DUPLICATED"));
     }
 
     @Test

@@ -56,7 +56,7 @@ X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 | 404 | `ROOM_NOT_FOUND` / `TEAM_NOT_FOUND` / `QUESTION_NOT_FOUND` / `PARTICIPATION_NOT_FOUND` | |
 | 409 | `USER_KEY_CONFLICT` | 이름당 후보 키 100개가 모두 사용 중(다른 이름 안내) 또는 저장 직전 경합(같은 이름으로 재시도) |
 | 409 | `ROOM_NOT_WAITING` | WAITING 아닌 방에 입장/설문 |
-| 409 | `NICKNAME_DUPLICATED` | 닉네임 중복. `suggestedNickname` 필드 추가 |
+| 409 | `NICKNAME_DUPLICATED` | 닉네임 자동 변경 후보(2~99)까지 모두 사용 중 (일반 중복은 서버가 자동 변경) |
 | 409 | `HOST_CANNOT_JOIN` | 주최자가 자기 방에 참가 시도 |
 | 409 | `ALREADY_IN_ANOTHER_ROOM` | 진행 중인 다른 방에 참가 중. `detail`에 그 방 코드 |
 | 409 | `ROOM_FULL` | 인원 상한 |
@@ -491,7 +491,7 @@ SSE(방): `ROOM_UPDATED` (참가자 화면은 이 시점엔 표시하지 않고,
 ```
 | 필드 | 제약 |
 |---|---|
-| nickname | 선택, 1~12자, trim. 생략 시 `users.name`. 방 내 대소문자 무시 유일 |
+| nickname | 선택, 1~12자, trim. 생략 시 `users.name`. 방 안에 같은 닉네임(대소문자 무시)이 있으면 서버가 `민수2`처럼 자동 변경 → 응답 `nickname` 확인 |
 
 **201** (신규) / **200** (이미 참가 중)
 ```json
@@ -503,7 +503,7 @@ SSE(방): `ROOM_UPDATED` (참가자 화면은 이 시점엔 표시하지 않고,
 }
 ```
 **409** `ROOM_NOT_WAITING` / `ROOM_FULL` / `HOST_CANNOT_JOIN` / `ALREADY_IN_ANOTHER_ROOM`
-**409** `NICKNAME_DUPLICATED` — 응답에 `suggestedNickname: "민수2"` 포함
+**409** `NICKNAME_DUPLICATED` — 자동 변경 후보(`민수2`~`민수99`)까지 모두 사용 중인 경우에만
 SSE: `PARTICIPANT_JOINED`.
 
 ---
