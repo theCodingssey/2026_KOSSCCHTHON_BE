@@ -5,7 +5,7 @@ import java.util.Optional;
 
 /**
  * GET /users/me 의 activeRoom 을 채우는 확장점.
- * 방(room) 도메인이 구현되면 그쪽에서 이 인터페이스의 빈을 제공하고 {@link NoActiveRoomProvider} 는 제거한다.
+ * 구현: room 패키지의 RoomActiveRoomProvider.
  */
 public interface ActiveRoomProvider {
 
