@@ -18,7 +18,7 @@
 X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 ```
 
-- 유저 키는 클라이언트가 `sha256(trim(name) + nonce)` 로 만들고 `POST /users` 로 등록한다. 서버는 이 값을 `users.user_key` PK로 저장한다.
+- 유저 키는 `POST /users` 에 이름을 보내면 **서버가** `sha256(trim(name) + nonce)` 로 생성해 돌려준다. 클라이언트는 이 값을 기기에 저장하고 이후 요청에 그대로 보낸다. 서버는 이 값을 `users.user_key` PK로 저장한다.
 - 헤더가 없으면 `401 USER_KEY_REQUIRED`, 형식이 틀리면 `400 USER_KEY_INVALID_FORMAT`, 등록되지 않은 키면 `401 USER_NOT_FOUND`.
 - **역할은 방 단위로 DB에서 판정**한다.
 
@@ -50,12 +50,11 @@ X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 | HTTP | code | 상황 |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 필드 검증 실패. `errors: [{field, message}]` 추가 |
-| 400 | `USER_KEY_INVALID_FORMAT` | `^[0-9a-f]{64}$` 불일치 |
-| 400 | `USER_KEY_MISMATCH` | 등록 시 키가 `sha256(name + 1..100)` 어느 것과도 일치하지 않음 [S] |
+| 400 | `USER_KEY_INVALID_FORMAT` | `X-User-Key` 값이 `^[0-9a-f]{64}$` 불일치 |
 | 401 | `USER_KEY_REQUIRED` / `USER_NOT_FOUND` | 헤더 누락 / 미등록 키 |
 | 403 | `FORBIDDEN` | 호스트/참가자/팀원 아님 |
 | 404 | `ROOM_NOT_FOUND` / `TEAM_NOT_FOUND` / `QUESTION_NOT_FOUND` / `PARTICIPATION_NOT_FOUND` | |
-| 409 | `USER_KEY_CONFLICT` | 이미 존재하는 유저 키. 클라이언트는 난수 재생성 후 재시도 |
+| 409 | `USER_KEY_CONFLICT` | 이름당 후보 키 100개가 모두 사용 중(다른 이름 안내) 또는 저장 직전 경합(같은 이름으로 재시도) |
 | 409 | `ROOM_NOT_WAITING` | WAITING 아닌 방에 입장/설문 |
 | 409 | `NICKNAME_DUPLICATED` | 닉네임 중복. `suggestedNickname` 필드 추가 |
 | 409 | `HOST_CANNOT_JOIN` | 주최자가 자기 방에 참가 시도 |
@@ -78,8 +77,8 @@ X-User-Key: 3a7f...c9e1        (64자 소문자 hex)
 ```
 RoomStatus        WAITING | TEAM_BUILDING | IN_PROGRESS | FINISHED
 ParticipantStatus JOINED | SURVEY_DONE | ASSIGNED | LATE | LEFT
-TeamStatus        NOT_STARTED | NAMING | QUESTIONING | FINAL_QUESTION | FINISHED
-QuestionType      INTRO | AI_GENERATED | FALLBACK | HOST_FINAL
+TeamStatus        NOT_STARTED | NAMING | QUESTIONING | FINISHED     (FINISHED 는 방 종료로만 전이)
+QuestionType      INTRO | AI_GENERATED | FALLBACK
 QuestionStatus    ANSWERING | PROCESSING | DONE | SKIPPED | FAILED
 InterestCategory  MOVIE | GAME | FOOD | TRAVEL | SPORTS
 ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표시용)
@@ -110,7 +109,8 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | DELETE | `/host/rooms/{code}/participants/{participantId}` | 호스트 | 참가자 강퇴 (WAITING만) |
 | GET | `/host/rooms/{code}/teams` | 호스트 | 팀 목록 (팀명, 상태, 인원, 진행 질문 수) |
 | PATCH | `/host/rooms/{code}/teams/{teamId}/members` | 호스트 | 참가자 팀 이동 / LATE 배치 [C] |
-| POST | `/host/rooms/{code}/finish` | 호스트 | 방 종료 (전 팀 세션 종료) |
+| PUT | `/host/rooms/{code}/final-questions` | 호스트 | 마무리 질문 목록 수정 (종료 전까지 언제든) |
+| POST | `/host/rooms/{code}/finish` | 호스트 | 아이스브레이킹 종료 → 전 팀 종료 + 마무리 질문 목록 전파 |
 | GET | `/host/rooms/{code}/events` | 호스트 | SSE 스트림 (방 전체 이벤트) |
 
 ### 1.3 참가자
@@ -136,9 +136,9 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | POST | `/teams/{teamId}/questions/{questionId}/answer` | 팀원 | 대화 텍스트 제출 (프론트 STT 결과) → 비동기 처리 시작 |
 | POST | `/teams/{teamId}/questions/{questionId}/retry` | 팀원 | FAILED 재처리 |
 | GET | `/teams/{teamId}/questions/{questionId}` | 팀원\|호스트 | 질문 + 답변 처리 결과 (폴링용) |
-| POST | `/teams/{teamId}/wrap-up` | 팀원 | 마무리 → HOST_FINAL 질문 제시 또는 즉시 종료 |
-| POST | `/teams/{teamId}/finish` | 팀원\|호스트 | 세션 종료 |
-| GET | `/teams/{teamId}/summary` | 팀원\|호스트 | 종료 요약 (팀명, 질문 수, 키워드) |
+| GET | `/teams/{teamId}/summary` | 팀원\|호스트 | 종료 요약 (마무리 질문, 팀명, 질문 수, 키워드) |
+
+> 팀 쪽에는 종료 API가 없다. 세션 종료는 주최자의 `POST /host/rooms/{code}/finish` 로만 일어난다.
 | GET | `/teams/{teamId}/events` | 팀원\|호스트 | SSE 스트림 (팀 이벤트만) |
 
 ---
@@ -147,19 +147,17 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 
 ### 2.0 유저
 
-#### 클라이언트 키 생성 절차 (Flutter)
+#### 유저 등록 절차 (Flutter 관점)
 
 ```
-1. name = trim(입력값)                      // 1~12자
-2. nonce = random.nextInt(100) + 1          // 1~100
-3. userKey = sha256(utf8.encode(name + nonce.toString())).toString()   // 64자 lowercase hex  (package:crypto)
-4. POST /users { userKey, name, nonce }
-   - 201 → flutter_secure_storage 에 userKey 저장, 완료
-   - 409 USER_KEY_CONFLICT → 2번부터 재시도 (최대 10회, 초과 시 "다른 이름을 입력해 주세요")
-5. 이후 모든 요청: X-User-Key: {userKey}
+1. name = 입력값                            // 서버가 trim, 1~12자 검증
+2. POST /users { name }
+   - 201 → 응답의 userKey 를 flutter_secure_storage 에 저장, 완료
+   - 409 USER_KEY_CONFLICT → detail 에 따라 "다시 시도" 또는 "다른 이름을 입력해 주세요" 안내
+3. 이후 모든 요청: X-User-Key: {userKey}
 ```
 
-`nonce`는 서버 검증(U-04)용으로만 보내며 서버는 저장하지 않는다.
+클라이언트는 해시를 계산하지 않는다. 키 생성 규칙은 서버 내부 사항이다.
 
 ---
 
@@ -167,28 +165,28 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 
 **Request**
 ```json
-{
-  "userKey": "3a7f0d2e9b6c4f18a5d7e2c1b0f9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1",
-  "name": "민수",
-  "nonce": 42
-}
+{ "name": "민수" }
 ```
 | 필드 | 제약 |
 |---|---|
-| userKey | 필수, `^[0-9a-f]{64}$` |
-| name | 필수, 1~12자, trim |
-| nonce | 필수, 1~100 정수. 서버는 `sha256(name + nonce) == userKey` 검증 [S] |
+| name | 필수, trim 후 1~12자 |
+
+**서버 동작**
+1. `sha256(trim(name) + nonce)` (nonce 1~100) 후보 키 100개 생성
+2. `users` 에서 후보 100개를 한 번에 조회해 사용 중인 키 제외
+3. 남은 키 중 하나를 무작위로 골라 저장
+4. 남은 키가 없으면 `409`
 
 **201**
 ```json
 {
-  "userKey": "3a7f...f2a1",
+  "userKey": "3a7f0d2e9b6c4f18a5d7e2c1b0f9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1",
   "name": "민수",
   "createdAt": "2026-09-19T10:00:00Z"
 }
 ```
-**409** `USER_KEY_CONFLICT` — 이미 존재. 같은 이름이든 다른 이름이든 항상 409 (클라이언트가 재시도)
-**400** `USER_KEY_MISMATCH` — nonce 검증 실패
+**409** `USER_KEY_CONFLICT` — 같은 이름의 후보 키 100개가 모두 사용 중(다른 이름 필요), 또는 저장 직전 경합(같은 이름으로 재시도 가능). `detail` 문구로 구분
+**400** `VALIDATION_ERROR` — 이름 누락/길이 초과
 
 ---
 
@@ -264,7 +262,10 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
   "title": "KOSSCCHTHON 팀빌딩",
   "situation": "대학생 해커톤 참가자 30명, 서로 처음 봄. 개발자/디자이너 혼합.",
   "teamSize": 4,
-  "finalQuestion": "오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표 한 가지는?"
+  "finalQuestions": [
+    "오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표 한 가지는?",
+    "서로에게 해주고 싶은 응원 한마디!"
+  ]
 }
 ```
 | 필드 | 타입 | 제약 |
@@ -272,7 +273,7 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | title | string | 필수, 1~50자 |
 | situation | string | 필수, 1~500자 |
 | teamSize | int | 필수, 2~10 |
-| finalQuestion | string \| null | 선택, 최대 200자 |
+| finalQuestions | string[] | 선택(기본 `[]`), 0~5개, 각 1~200자. 종료 시 모든 참가자 화면에 표시 |
 
 **201**
 ```json
@@ -285,7 +286,7 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
   "title": "KOSSCCHTHON 팀빌딩",
   "situation": "...",
   "teamSize": 4,
-  "finalQuestion": "...",
+  "finalQuestions": ["...", "..."],
   "status": "WAITING",
   "createdAt": "2026-09-19T10:00:00Z",
   "expiresAt": "2026-09-20T10:00:00Z"
@@ -323,7 +324,7 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
   "title": "...",
   "situation": "...",
   "teamSize": 4,
-  "finalQuestion": "...",
+  "finalQuestions": ["...", "..."],
   "status": "IN_PROGRESS",
   "inviteUrl": "https://icelink.app/join/K7M3PQ",
   "deepLink": "icelink://join?code=K7M3PQ",
@@ -354,8 +355,9 @@ WAITING 상태에서만. 보낸 필드만 변경.
 
 **Request**
 ```json
-{ "teamSize": 5, "finalQuestion": null }
+{ "teamSize": 5 }
 ```
+마무리 질문 목록은 이 API가 아니라 아래 `PUT /host/rooms/{code}/final-questions` 로 수정한다 (상태 제한이 다름).
 **200** — `POST /rooms` 응답과 동일 구조
 **409** `INVALID_STATE_TRANSITION`
 
@@ -440,14 +442,41 @@ SSE: 방 전체에 `TEAM_BUILDING_COMPLETED` 발행.
 
 ---
 
-#### `POST /host/rooms/{code}/finish` — 방 종료
-모든 팀을 `FINISHED`로 전이. 멱등.
+#### `PUT /host/rooms/{code}/final-questions` — 마무리 질문 목록 수정
+방이 `FINISHED`가 아니면 언제든 가능. 진행 중 떠오른 질문을 추가하는 용도. 목록 전체를 덮어쓴다.
+
+**Request**
+```json
+{ "finalQuestions": ["오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표는?", "서로에게 응원 한마디!"] }
+```
+| 제약 | 0~5개, 각 trim 후 1~200자 |
 
 **200**
 ```json
-{ "roomStatus": "FINISHED", "finishedAt": "...", "finishedTeamCount": 5 }
+{ "finalQuestions": ["...", "..."], "updatedAt": "..." }
 ```
-SSE: `ROOM_FINISHED`.
+**409** `INVALID_STATE_TRANSITION` — 이미 종료된 방
+SSE(방): `ROOM_UPDATED` (참가자 화면은 이 시점엔 표시하지 않고, 종료 시 받는 값으로 표시)
+
+---
+
+#### `POST /host/rooms/{code}/finish` — 아이스브레이킹 종료
+주최자 화면의 "아이스브레이킹 종료" 버튼. 한 번에 다음을 수행한다. 멱등.
+
+1. 방 `→ FINISHED`, 모든 팀 `→ FINISHED` (상태 무관, `NOT_STARTED` 팀 포함)
+2. 각 팀의 `PROCESSING` 중인 답변은 처리를 끝내되 다음 질문은 생성하지 않음
+3. 모든 참가자에게 SSE `ROOM_FINISHED` 발행. payload에 **마무리 질문 목록** 포함 → 참가자 화면이 마무리 질문 화면으로 전환
+
+**200**
+```json
+{
+  "roomStatus": "FINISHED",
+  "finishedAt": "...",
+  "finishedTeamCount": 5,
+  "finalQuestions": ["오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표는?", "서로에게 응원 한마디!"]
+}
+```
+`WAITING`/`TEAM_BUILDING` 상태에서도 호출 가능하다(행사 취소). 이 경우 팀이 없으므로 참가자는 요약 없이 종료 화면만 본다.
 
 ---
 
@@ -489,7 +518,8 @@ SSE: `PARTICIPANT_JOINED`.
   "userKey": "3a7f...f2a1",
   "nickname": "민수",
   "status": "ASSIGNED",
-  "room": { "roomId": 12, "code": "K7M3PQ", "title": "...", "status": "IN_PROGRESS", "teamSize": 4, "participantCount": 21 },
+  "room": { "roomId": 12, "code": "K7M3PQ", "title": "...", "status": "IN_PROGRESS", "teamSize": 4, "participantCount": 21,
+            "finalQuestions": null },
   "survey": { "personalityDone": true, "categoryDone": true, "extroversionScore": 24, "interestCategory": "GAME" },
   "team": {
     "teamId": 501, "teamNo": 1, "name": "감자전사", "status": "QUESTIONING",
@@ -499,7 +529,8 @@ SSE: `PARTICIPANT_JOINED`.
 }
 ```
 - `team`은 미배정 시 `null`.
-- 프론트 라우팅: `room.status=WAITING && !survey.*Done → 설문` / `WAITING && done → 대기` / `IN_PROGRESS && team → 팀 화면 (team.status 따라 세부)` / `FINISHED → 종료`
+- `room.finalQuestions`는 방이 `FINISHED`일 때만 채워지고 그 전에는 `null` (참가자에게 미리 노출하지 않음).
+- 프론트 라우팅: `room.status=WAITING && !survey.*Done → 설문` / `WAITING && done → 대기` / `IN_PROGRESS && team → 팀 화면 (team.status 따라 세부)` / `FINISHED → 마무리 질문 + 요약 화면`
 
 **403** `FORBIDDEN` — 이 방의 참가자가 아님 (나갔거나 미참가)
 
@@ -568,7 +599,6 @@ SSE: `PARTICIPANT_JOINED`.
   "mixed": false,
   "questionCount": 3,
   "questionLimit": 15,
-  "hasFinalQuestion": true,
   "members": [
     { "participantId": 101, "nickname": "민수", "isMe": true },
     { "participantId": 102, "nickname": "지현", "isMe": false }
@@ -742,36 +772,13 @@ AI 생성은 비동기. 즉시 `202`를 반환하고 생성 완료 시 SSE `QUES
 
 ---
 
-#### `POST /teams/{teamId}/wrap-up` — 마무리하기
-- 방에 `finalQuestion`이 있으면: `QUESTIONING → FINAL_QUESTION`, `HOST_FINAL` 질문 생성 (동기, AI 미사용)
-- 없으면: 바로 `FINISHED` (= `/finish`와 동일)
-
-**200**
-```json
-{
-  "status": "FINAL_QUESTION",
-  "currentQuestion": {
-    "questionId": 9010, "orderNo": 6, "type": "HOST_FINAL",
-    "content": "오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표 한 가지는?", "status": "ANSWERING"
-  }
-}
-```
-HOST_FINAL 질문도 텍스트 답변 제출 가능하나(요약·키워드는 추출), 처리 완료 후 **다음 질문은 생성하지 않는다**.
-
----
-
-#### `POST /teams/{teamId}/finish` — 세션 종료
-어느 상태에서든 `FINISHED`. 진행 중인 `PROCESSING`이 있으면 처리는 계속되되 다음 질문은 생성하지 않음. 멱등.
-
-**200**
-```json
-{ "status": "FINISHED", "finishedAt": "...", "summary": { "...": "GET /summary 와 동일" } }
-```
-SSE(팀): `TEAM_FINISHED`. SSE(방): `TEAM_STATUS_CHANGED`.
+#### 팀 세션 종료에 대해
+팀 쪽에는 종료·마무리 API가 없다. 주최자가 `POST /host/rooms/{code}/finish` 를 호출하면 팀이 `FINISHED`로 전이하고, 팀원은 SSE `ROOM_FINISHED` 로 마무리 질문 목록을 받아 화면을 전환한다. AI 질문 상한(15개)에 도달한 팀은 마지막 질문의 답변까지는 정상 처리(요약·키워드 저장)되지만 다음 질문은 생성되지 않고, `POST /questions/next` 는 `409 QUESTION_LIMIT_EXCEEDED` 를 반환한다. 화면에는 "주최자의 종료를 기다려 주세요"를 표시한다.
 
 ---
 
 #### `GET /teams/{teamId}/summary` — 종료 요약
+방이 `FINISHED`가 아니면 `409 INVALID_STATE_TRANSITION`.
 
 **200**
 ```json
@@ -781,6 +788,7 @@ SSE(팀): `TEAM_FINISHED`. SSE(방): `TEAM_STATUS_CHANGED`.
   "name": "감자전사",
   "members": [ { "participantId": 101, "nickname": "민수" } ],
   "category": "GAME",
+  "finalQuestions": ["오늘 해커톤에서 우리 팀이 꼭 이루고 싶은 목표는?", "서로에게 응원 한마디!"],
   "questionCount": 5,
   "answeredCount": 4,
   "durationSec": 1260,
@@ -823,10 +831,10 @@ data: {"roomId":12,"teamId":501,"occurredAt":"2026-09-19T10:05:00Z","payload":{.
 | `PARTICIPANT_JOINED` | 방 | `{participantId, nickname, participantCount}` | 참가 |
 | `PARTICIPANT_LEFT` | 방 | `{participantId, participantCount}` | 나가기/강퇴 |
 | `PARTICIPANT_SURVEY_DONE` | 방 | `{participantId, surveyDoneCount, participantCount}` | 설문 완료 |
-| `ROOM_UPDATED` | 방 | `{title, teamSize, finalQuestion}` | 방 설정 수정 |
+| `ROOM_UPDATED` | 방 | `{title, teamSize, finalQuestionCount}` | 방 설정·마무리 질문 수정 (질문 본문은 종료 전 참가자에게 보내지 않음) |
 | `TEAM_BUILDING_STARTED` | 방 | `{}` | 팀 빌딩 시작 |
 | `TEAM_BUILDING_COMPLETED` | 방 | `{teamCount, myTeam: {teamId, teamNo, name, category, members[]} \| null}` | 팀 빌딩 완료 (참가자 스트림엔 `myTeam` 채움) |
-| `ROOM_FINISHED` | 방 | `{finishedAt}` | 방 종료 |
+| `ROOM_FINISHED` | 방 | `{finishedAt, finalQuestions: string[], myTeam: {teamId, name, summary} \| null}` | 주최자 종료. 참가자 화면은 이 이벤트로 마무리 질문 화면 전환 |
 | `TEAM_STARTED` | 팀 | `{teamId, currentQuestion}` | 모두 모였어요 |
 | `TEAM_NAME_CHANGED` | 팀+방 | `{teamId, teamNo, name, isDefaultName, updatedBy}` | 팀명 수정 (기본값 복원 포함) |
 | `TEAM_STATUS_CHANGED` | 방 | `{teamId, teamNo, status, questionCount}` | 팀 상태 전이 (주최자 모니터링) |
@@ -835,7 +843,7 @@ data: {"roomId":12,"teamId":501,"occurredAt":"2026-09-19T10:05:00Z","payload":{.
 | `ANSWER_PROCESSING` | 팀 | `{teamId, questionId, submittedBy}` | 텍스트 제출 접수 (다른 팀원 화면도 "처리 중"으로 전환) |
 | `ANSWER_PROCESSED` | 팀 | `{teamId, questionId, keywords[], summary}` | 요약·키워드 추출 완료 |
 | `ANSWER_FAILED` | 팀 | `{teamId, questionId, failureReason, retryable}` | 처리 실패 |
-| `TEAM_FINISHED` | 팀+방 | `{teamId, teamNo, finishedAt}` | 세션 종료 |
+| `TEAM_FINISHED` | 방 | `{teamId, teamNo, finishedAt}` | 방 종료에 따른 팀 종료 (주최자 모니터링용. 팀원은 `ROOM_FINISHED` 만 처리) |
 
 ### 3.4 폴링 폴백
 SSE 연결 불가 시 프론트는 화면별로 아래를 3초 간격 호출:
@@ -855,7 +863,8 @@ POST /answer (202)
   └─ [동기, 트랜잭션] team_answers INSERT, team_questions.status = PROCESSING (낙관적 락으로 중복 제출 차단)
   └─ SSE ANSWER_PROCESSING
   └─ @Async 작업 (Spring @Async + ThreadPoolTaskExecutor, 단일 인스턴스 기준)
-       1. shouldGenerateNext = team.status == QUESTIONING && question.type != HOST_FINAL && questionCount < limit
+       1. shouldGenerateNext = room.status == IN_PROGRESS && team.status == QUESTIONING && questionCount < limit
+          (비동기 처리 중 주최자가 종료했을 수 있으므로 여기서 room 상태를 다시 조회)
        2. LLM Provider.process(ctx)  ── 1회 호출 ──▶ { summary, keywords[3..7], nextQuestion | null }
             - answerText 10자 미만이면 summary/keywords 생략, nextQuestion 만 요청
        3. team_answers UPDATE (summary, keywords, processed_at), question DONE   → SSE ANSWER_PROCESSED
@@ -1015,7 +1024,7 @@ teamNo 를 1부터 순차 부여 (카테고리 순 → 팀 순), name = "{teamNo
 - 비동기: `@EnableAsync` + 전용 `ThreadPoolTaskExecutor(core 4, max 8, queue 100)`. 비동기 메서드는 별도 `@Transactional` 경계에서 엔티티를 다시 조회 (detached 엔티티 넘기지 않음)
 - 데이터 접근: Spring Data JPA. 엔티티는 `user`(PK `String userKey`), `room`, `participant`, `team`, `teamQuestion`, `teamAnswer`, `roomEvent`. 연관은 `@ManyToOne(fetch = LAZY)`만 쓰고 컬렉션 매핑은 피한다 (N+1 방지, 목록은 Repository 쿼리로). `keywords` 배열은 Hibernate 7 `@JdbcTypeCode(SqlTypes.ARRAY)` 또는 `String` 조인 컬럼 중 하나로 통일. `interest_category`/`category`는 `@Enumerated(EnumType.STRING)`
 - 팀 빌딩: `TeamBuilder` 는 순수 함수(입력 리스트 → 팀 리스트)로 분리해 JPA 없이 단위 테스트. 5절 예시를 테스트 케이스로 고정
-- 스키마: Flyway `V1__init.sql` 로 생성, `spring.jpa.hibernate.ddl-auto=validate`
-- DB 접속: `application.properties`는 호스트·포트·DB명·계정을 환경 변수 기본값으로 갖고, 비밀번호는 `ICELINK_DB_PASSWORD` 로만 받는다. 로컬은 `application-local.properties`에 넣고 `--spring.profiles.active=local` 로 실행. 공용 개발 DB라 팀원 모두 같은 스키마를 보므로 Flyway 마이그레이션 파일은 한 번 커밋되면 수정하지 않고 새 버전을 추가한다
-- 추가 의존성 예정: `spring-boot-starter-data-jpa`, `spring-boot-starter-validation`, `flyway-core` + `flyway-database-postgresql`
+- 스키마: Flyway 미사용(백엔드 1인 개발). `spring.jpa.hibernate.ddl-auto=update` 로 엔티티 기준 자동 생성·변경. 컬럼 이름 변경/삭제는 `update`가 처리하지 못하므로 그런 경우 DB에서 직접 `ALTER`/`DROP` 한다. 시연 직전에는 `validate`로 바꿔 엔티티와 테이블이 어긋나지 않았는지 한 번 확인
+- DB 접속: `application.properties`는 호스트·포트·DB명·계정을 환경 변수 기본값으로 갖고, 비밀번호는 `ICELINK_DB_PASSWORD` 로만 받는다. 로컬은 `application-local.properties`에 넣고 `--spring.profiles.active=local` 로 실행
+- 추가 의존성: `spring-boot-starter-data-jpa`, `spring-boot-starter-validation`, `spring-boot-starter-actuator`
 - OpenAPI: 컨트롤러에 `@Tag`, DTO에 `@Schema` 만 붙이고 이 문서와 어긋나면 이 문서를 우선 갱신

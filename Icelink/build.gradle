@@ -19,11 +19,16 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.mockito:mockito-core'
+	testImplementation 'org.assertj:assertj-core'
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
@@ -31,4 +36,30 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// Mockito inline mock maker 는 JDK 21+ 에서 -javaagent 로 붙여야 경고/실패가 없다.
+// Gradle 캐시 경로에 비ASCII 문자가 있으면 JVM 이 agent jar 를 열지 못하므로
+// jar 를 build/ 아래(ASCII 경로)로 복사한 뒤 그 경로로 붙인다.
+configurations {
+	mockitoAgent {
+		transitive = false
+	}
+}
+
+dependencies {
+	mockitoAgent 'org.mockito:mockito-core'
+}
+
+def mockitoAgentDir = layout.buildDirectory.dir('mockito-agent')
+
+tasks.register('copyMockitoAgent', Copy) {
+	from configurations.mockitoAgent
+	into mockitoAgentDir
+	rename { 'mockito-core.jar' }
+}
+
+tasks.named('test') {
+	dependsOn 'copyMockitoAgent'
+	jvmArgs "-javaagent:${mockitoAgentDir.get().asFile.absolutePath}${File.separator}mockito-core.jar"
 }
