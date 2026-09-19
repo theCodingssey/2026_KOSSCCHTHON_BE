@@ -3,6 +3,7 @@ package com.kosscchthon.Icelink.team.dto;
 import com.kosscchthon.Icelink.participant.InterestCategory;
 import com.kosscchthon.Icelink.team.Team;
 import com.kosscchthon.Icelink.team.TeamStatus;
+import com.kosscchthon.Icelink.team.session.dto.TeamQuestionResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
@@ -17,13 +18,13 @@ public record HostTeamResponse(
         boolean mixed,
         Double extroversionAvg,
         int questionCount,
-        @Schema(nullable = true, description = "3.5 에서 채움") Object currentQuestion,
+        @Schema(nullable = true, description = "가장 최근 질문") TeamQuestionResponse currentQuestion,
         List<TeamMemberView> members,
         Instant startedAt,
         Instant finishedAt
 ) {
 
-    public static HostTeamResponse from(Team team, List<TeamMemberView> members) {
+    public static HostTeamResponse from(Team team, List<TeamMemberView> members, TeamQuestionResponse currentQuestion) {
         return new HostTeamResponse(
                 team.getId(),
                 team.getTeamNo(),
@@ -33,7 +34,7 @@ public record HostTeamResponse(
                 team.isMixed(),
                 team.getExtroversionAvg(),
                 team.getQuestionCount(),
-                null,
+                currentQuestion,
                 members,
                 team.getStartedAt(),
                 team.getFinishedAt());

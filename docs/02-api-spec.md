@@ -136,7 +136,10 @@ ExtroversionLevel INTROVERT | BALANCED | EXTROVERT   (6~13 / 14~22 / 23~30, 표�
 | POST | `/teams/{teamId}/questions/{questionId}/answer` | 팀원 | 대화 텍스트 제출 (프론트 STT 결과) → 비동기 처리 시작 |
 | POST | `/teams/{teamId}/questions/{questionId}/retry` | 팀원 | FAILED 재처리 |
 | GET | `/teams/{teamId}/questions/{questionId}` | 팀원\|호스트 | 질문 + 답변 처리 결과 (폴링용) |
-| GET | `/teams/{teamId}/summary` | 팀원\|호스트 | 종료 요약 (마무리 질문, 팀명, 질문 수, 키워드) |
+| GET | `/teams/{teamId}/summary` | 팀원|호스트 | 종료 요약 (마무리 질문, 팀명, 질문 수, 키워드) |
+| GET | `/teams/{teamId}/events` | 팀원|호스트 | SSE 스트림 (팀 이벤트만) |
+
+> 팀 쪽에는 종료 API가 없다. 세션 종료는 주최자의 `POST /host/rooms/{code}/finish` 로만 일어난다.|호스트 | 종료 요약 (마무리 질문, 팀명, 질문 수, 키워드) |
 
 > 팀 쪽에는 종료 API가 없다. 세션 종료는 주최자의 `POST /host/rooms/{code}/finish` 로만 일어난다.
 | GET | `/teams/{teamId}/events` | 팀원\|호스트 | SSE 스트림 (팀 이벤트만) |
@@ -681,7 +684,6 @@ SSE(팀+방): `TEAM_NAME_CHANGED`.
       "answerText": "저는 최근에 롤을 다시 시작해서...",
       "submittedBy": { "participantId": 101, "nickname": "민수" },
       "speechDurationSec": 74,
-      "summary": "게임(롤)과 야식(떡볶이) 이야기, 밤샘 경험 공유",
       "keywords": ["롤", "떡볶이", "밤샘"],
       "submittedAt": "...",
       "processedAt": "..."
@@ -730,13 +732,13 @@ AI 생성은 비동기. 즉시 `202`를 반환하고 생성 완료 시 SSE `QUES
 **Request**
 ```json
 {
-  "answerText": "민수: 저는 최근에 롤을 다시 시작했어요. 지현: 저는 밤새면서 떡볶이 시켜 먹은 게 기억나요...",
+  "answerText": "저는 최근에 롤을 다시 시작했어요 아 저는 밤새면서 떡볶이 시켜 먹은 게 기억나요 저는 게임보다 축구 보는 걸 더 좋아해요",
   "speechDurationSec": 74
 }
 ```
 | 필드 | 제약 |
 |---|---|
-| answerText | 필수, trim 후 1~3000자. 여러 팀원 발화를 합쳤으면 프론트가 이어붙여 한 번에 전송 |
+| answerText | 필수, trim 후 1~3000자. 팀원 한 명의 기기로 녹음한 텍스트라 화자 구분이 없다. 프론트가 이름을 붙이지 않고 그대로 보낸다 |
 | speechDurationSec | 선택, 0~600. 통계용 |
 
 동작: `team_answers` 저장 → 질문 `ANSWERING → PROCESSING` → `202` 즉시 반환 → 비동기로 LLM 1회 호출(요약 + 키워드 + 다음 질문) → 질문 `DONE` → 다음 질문 INSERT → SSE `ANSWER_PROCESSED`, `QUESTION_CREATED`.
@@ -764,7 +766,7 @@ AI 생성은 비동기. 즉시 `202`를 반환하고 생성 완료 시 SSE `QUES
 ---
 
 #### `GET /teams/{teamId}/questions/{questionId}` — 질문 단건 (폴링)
-**200** — 질문 이력 원소 구조. `status`가 `DONE`이면 `answer.summary`, `answer.keywords` 채워짐. `FAILED`면 `failureReason` 추가:
+**200** — 질문 이력 원소 구조. `status`가 `DONE`이면 `answer.keywords` 채워짐. `FAILED`면 `failureReason` 추가:
 ```json
 { "questionId": 9001, "status": "FAILED", "failureReason": "LLM_TIMEOUT", "retryable": true, "...": "..." }
 ```
@@ -794,7 +796,7 @@ AI 생성은 비동기. 즉시 `202`를 반환하고 생성 완료 시 SSE `QUES
   "durationSec": 1260,
   "keywords": ["롤", "떡볶이", "밤샘", "부산", "카페"],
   "highlights": [
-    { "question": "각자 최근에 가장 몰입했던...", "summary": "게임(롤)과 야식(떡볶이) 이야기" }
+    { "question": "각자 최근에 가장 몰입했던...", "keywords": ["롤", "떡볶이", "밤샘"] }
   ],
   "startedAt": "...", "finishedAt": "..."
 }
@@ -833,15 +835,15 @@ data: {"roomId":12,"teamId":501,"occurredAt":"2026-09-19T10:05:00Z","payload":{.
 | `PARTICIPANT_SURVEY_DONE` | 방 | `{participantId, surveyDoneCount, participantCount}` | 설문 완료 |
 | `ROOM_UPDATED` | 방 | `{title, teamSize, finalQuestionCount}` | 방 설정·마무리 질문 수정 (질문 본문은 종료 전 참가자에게 보내지 않음) |
 | `TEAM_BUILDING_STARTED` | 방 | `{}` | 팀 빌딩 시작 |
-| `TEAM_BUILDING_COMPLETED` | 방 | `{teamCount, myTeam: {teamId, teamNo, name, category, members[]} \| null}` | 팀 빌딩 완료 (참가자 스트림엔 `myTeam` 채움) |
-| `ROOM_FINISHED` | 방 | `{finishedAt, finalQuestions: string[], myTeam: {teamId, name, summary} \| null}` | 주최자 종료. 참가자 화면은 이 이벤트로 마무리 질문 화면 전환 |
+| `TEAM_BUILDING_COMPLETED` | 방 | `{teamCount, myTeam: {teamId, teamNo, name, category, members[]} \|myTeam: {teamId, name, keywords: string[]} | null}` | 팀 빌딩 완료 (참가자 스트림엔 `myTeam` 채움) |
+| `ROOM_FINISHED` | 방 | `{finishedAt, finalQuestions: string[], myTeam: {teamId, name, keywords: string[]} | null}`\| null}` | 주최자 종료. 참가자 화면은 이 이벤트로 마무리 질문 화면 전환 |
 | `TEAM_STARTED` | 팀 | `{teamId, currentQuestion}` | 모두 모였어요 |
 | `TEAM_NAME_CHANGED` | 팀+방 | `{teamId, teamNo, name, isDefaultName, updatedBy}` | 팀명 수정 (기본값 복원 포함) |
 | `TEAM_STATUS_CHANGED` | 방 | `{teamId, teamNo, status, questionCount}` | 팀 상태 전이 (주최자 모니터링) |
 | `QUESTION_GENERATING` | 팀 | `{teamId, orderNo}` | AI 생성 시작 |
 | `QUESTION_CREATED` | 팀 | `{teamId, question: {questionId, orderNo, type, content}}` | 새 질문 도착 |
 | `ANSWER_PROCESSING` | 팀 | `{teamId, questionId, submittedBy}` | 텍스트 제출 접수 (다른 팀원 화면도 "처리 중"으로 전환) |
-| `ANSWER_PROCESSED` | 팀 | `{teamId, questionId, keywords[], summary}` | 요약·키워드 추출 완료 |
+| `ANSWER_PROCESSED` | 팀 | `{teamId, questionId, keywords[]}` | 키워드 추출 완료 |
 | `ANSWER_FAILED` | 팀 | `{teamId, questionId, failureReason, retryable}` | 처리 실패 |
 | `TEAM_FINISHED` | 방 | `{teamId, teamNo, finishedAt}` | 방 종료에 따른 팀 종료 (주최자 모니터링용. 팀원은 `ROOM_FINISHED` 만 처리) |
 
@@ -856,7 +858,78 @@ SSE 연결 불가 시 프론트는 화면별로 아래를 3초 간격 호출:
 
 ---
 
-## 4. 비동기 처리 파이프라인 (답변 → 다음 질문)
+## 4. AI 질문 생성 — 두 가지 프롬프트
+
+질문 생성은 시점에 따라 프롬프트가 둘로 나뉜다. 둘 다 실패하면 카테고리별 기본 질문 풀(`FALLBACK`)로 대체해 흐름을 끊지 않는다.
+
+| | ① 카테고리 기반 첫 질문 | ② 대화 기반 꼬리 주제 |
+|---|---|---|
+| 호출 시점 | `POST /teams/{id}/questions/next` (NAMING → QUESTIONING 진입) | `POST /teams/{id}/questions/{qid}/answer` 처리 중 |
+| 입력 | 상황 설명, 팀 카테고리, 팀원 수 | 상황 설명, 팀 카테고리, 팀원 수, 직전 질문, 대화 텍스트(화자 구분 없음), 누적 키워드, 이 팀의 이전 질문들 |
+| 출력 | 대화 주제 질문 1개 (평문) | `{"keywords": [...], "nextQuestion": "..."}` (한 줄 JSON). nextQuestion 은 첫 질문과 같은 형식의 팀 전체 주제 |
+| 동기/비동기 | 비동기 (202 후 SSE) | 비동기 (202 후 SSE) |
+
+중복 방지 범위는 **팀 안**이다. 같은 방의 다른 팀이 비슷한 첫 질문을 받는 것은 허용한다.
+
+### 4.1 프롬프트 ① — 카테고리 기반 첫 질문
+
+```
+당신은 팀 아이스브레이킹을 돕는 AI 진행자입니다.
+
+[상황]
+방의 주제: {situation}
+팀의 관심사: {category}
+팀원 수: {memberCount}명
+
+[지시사항]
+1. 위 정보를 바탕으로 팀을 알아가는 대화 질문 1개를 생성하세요.
+2. 질문은 {category} 카테고리와 직접 관련이 있어야 합니다.
+3. 질문은 자연스럽고 답하기 쉬워야 하며, 팀원 전원이 돌아가며 답할 수 있는 개방형이어야 합니다.
+4. 한국어 존댓말로 1~2문장, 200자 이내로 작성하세요.
+5. 정치·종교·외모·연봉·연애 여부·개인 신상을 묻는 질문은 금지합니다.
+6. 질문만 반환하고, 설명·번호·따옴표·추가 텍스트는 없어야 합니다.
+
+질문을 생성하세요:
+```
+
+응답 처리: 앞뒤 공백·따옴표 제거 → 1~200자 검증 → `type = AI_GENERATED`. 실패 시 `FallbackQuestionPool.pick(category)`.
+
+### 4.2 프롬프트 ② — 대화 기반 꼬리 주제 (+ 키워드)
+
+전제: 팀원 **한 명의 기기**로 질문을 보고 녹음하므로, 대화 텍스트는 여러 사람의 말이 섞인 **화자 구분 없는** 텍스트다.
+따라서 개인을 지목하는 질문("OO님은 어떠세요?")은 만들 수 없고, 대화 키워드를 소재로 **팀 전체가 함께 이야기할 하나의 주제**를 첫 질문과 같은 형식으로 낸다.
+
+```
+당신은 팀 아이스브레이킹을 돕는 AI 진행자입니다.
+
+[상황]
+방의 주제: {situation}
+팀의 관심사: {category}
+팀원 수: {memberCount}명
+
+[직전 대화]
+이전 질문: {currentQuestion}
+팀의 대화 내용 (팀원 한 명의 기기로 녹음한 음성 인식 텍스트. 여러 사람의 말이 섞여 있고 누가 말했는지는 알 수 없음): {currentAnswerText}
+
+[누적 정보]
+지금까지 나온 키워드: {accumulatedKeywords}
+이전에 이미 던진 질문들: {previousQuestions}
+
+[지시사항]
+1. 팀의 대화 내용에서 핵심 키워드 3~7개를 짧은 명사구로 뽑으세요.
+2. 그 키워드 중 1개 이상을 소재로, 팀원 모두가 함께 이야기할 수 있는 하나의 대화 주제 질문을 1개 생성하세요. 이전 질문과 같은 형식의 개방형 질문이어야 합니다.
+3. 누가 무슨 말을 했는지는 알 수 없습니다. 특정 사람을 지목하거나 이름을 부르지 말고, "OO님은 어떠세요?" 같은 개인별 질문을 만들지 마세요. 항상 팀 전체에게 묻는 형태로 작성하세요.
+4. 질문은 반드시 {category} 카테고리와 연관되어야 합니다. 대화가 다른 주제로 흘렀으면 그 주제와 카테고리를 연결하세요.
+5. 이전에 던진 질문들과 소재·형식이 중복되지 않도록 하세요.
+6. 한국어 존댓말로 1~2문장, 200자 이내.
+7. 정치·종교·외모·연봉·연애 여부·개인 신상을 묻는 질문은 금지합니다.
+8. 출력은 공백·줄바꿈 없는 한 줄 JSON 객체 {"keywords":[...],"nextQuestion":"..."} 만 허용합니다. 다른 텍스트는 금지.
+```
+
+응답 처리: `choices[0].message.content` 에서 첫 `{`~마지막 `}` 를 잘라 JSON 파싱 → `keywords` 는 답변에 저장, `nextQuestion` 은 1~200자 검증 후 새 질문(`AI_GENERATED`). 파싱 실패 → `LLM_INVALID_RESPONSE`.
+답변 텍스트가 10자 미만이면 프롬프트 ②를 건너뛰고 프롬프트 ①로 일반 질문을 만든다 (Q-16).
+
+### 4.3 비동기 처리 파이프라인 (답변 → 꼬리질문)
 
 ```
 POST /answer (202)
@@ -865,66 +938,36 @@ POST /answer (202)
   └─ @Async 작업 (Spring @Async + ThreadPoolTaskExecutor, 단일 인스턴스 기준)
        1. shouldGenerateNext = room.status == IN_PROGRESS && team.status == QUESTIONING && questionCount < limit
           (비동기 처리 중 주최자가 종료했을 수 있으므로 여기서 room 상태를 다시 조회)
-       2. LLM Provider.process(ctx)  ── 1회 호출 ──▶ { summary, keywords[3..7], nextQuestion | null }
-            - answerText 10자 미만이면 summary/keywords 생략, nextQuestion 만 요청
-       3. team_answers UPDATE (summary, keywords, processed_at), question DONE   → SSE ANSWER_PROCESSED
+       2. 프롬프트 ② 1회 호출 ──▶ { keywords[3..7], nextQuestion }
+       3. team_answers UPDATE (keywords, processed_at), question DONE          → SSE ANSWER_PROCESSED
        4. shouldGenerateNext 이면
-            └─ nextQuestion 이 유효(1~200자, 이전 질문과 중복 아님)하면 type = AI_GENERATED
-            └─ 아니면 FallbackQuestionPool.pick(team.category, 이미 쓴 질문 제외)  type = FALLBACK
-            └─ team_questions INSERT (ANSWERING), team.question_count++             → SSE QUESTION_CREATED
+            └─ nextQuestion 유효(1~200자, 팀 내 이전 질문과 중복 아님) → type = AI_GENERATED
+            └─ 아니면 FallbackQuestionPool.pick(team.category, 이 팀에서 이미 쓴 질문 제외) → type = FALLBACK
+            └─ team_questions INSERT (ANSWERING), team.question_count++         → SSE QUESTION_CREATED
   └─ LLM 예외/타임아웃(15초) → question FAILED, SSE ANSWER_FAILED  (retry 엔드포인트로 재시도)
 ```
 
-**LLM 입력 컨텍스트 (`generation_context` 저장)**
-```json
-{
-  "situation": "대학생 해커톤 참가자 30명...",
-  "category": "GAME",
-  "memberCount": 4,
-  "questionNo": 4,
-  "previousQuestions": ["...", "..."],
-  "previousSummaries": ["게임(롤)과 야식(떡볶이) 이야기"],
-  "accumulatedKeywords": ["롤", "떡볶이", "밤샘"],
-  "currentQuestion": "각자 최근에 가장 몰입했던 게임이나 음식 이야기를 하나씩 해볼까요?",
-  "currentAnswerText": "민수: 저는 최근에 롤을 다시 시작했어요. 지현: ..."
-}
-```
-
-**LLM 출력 스키마 (JSON 강제)**
-```json
-{
-  "summary": "롤 복귀와 밤샘 떡볶이 경험 공유",
-  "keywords": ["롤", "떡볶이", "밤샘"],
-  "nextQuestion": "밤샘하면서 먹었던 야식 중에 팀원들한테 꼭 추천하고 싶은 게임 친구용 메뉴가 있나요?"
-}
-```
-
-**프롬프트 핵심 규칙 (시스템 프롬프트에 고정)**
-1. 질문은 반드시 `category`와 연관되어야 한다. 대화가 다른 주제로 흘렀으면 그 주제와 카테고리를 연결하는 질문을 만든다.
-2. `currentAnswerText`에 등장한 구체적 소재(고유명사, 경험)를 1개 이상 인용해 "듣고 있었다"는 느낌을 준다.
-3. `previousQuestions`와 같은 소재·형식의 질문은 피한다.
-4. 한국어 존댓말, 1~2문장, 팀 전원이 돌아가며 답할 수 있는 개방형. 정치·종교·외모·연봉·연애 여부·개인 신상 금지.
-5. 출력은 위 JSON 스키마만. 다른 텍스트 금지.
+`generation_context`(jsonb)에는 프롬프트에 넣은 값과 `usage.total_tokens`를 저장해 디버깅·크레딧 추적에 쓴다.
 
 ---
 
-## 4.1 AI 게이트웨이 연동
+## 4.4 AI 게이트웨이 연동
 
 | 항목 | 값 |
 |---|---|
 | Base URL | `https://ai.cs.kookmin.ac.kr/v1` |
 | 엔드포인트 | `POST /chat/completions` (OpenAI Chat Completions 호환) |
 | 인증 | `Authorization: Bearer {ICELINK_AI_API_KEY}` |
-| 모델 | `claude-haiku-4-5` |
+| 모델 | `claude-opus-5` (발급된 키가 접근 가능한 유일한 모델. `claude-haiku-4-5` 는 403) |
 | 타임아웃 | 연결 3초 / 읽기 15초 |
 | 재시도 | 5xx·타임아웃 시 1회 (지수 백오프 1초). 그 외 즉시 FAILED |
 
 **요청 예시**
 ```json
 {
-  "model": "claude-haiku-4-5",
+  "model": "claude-opus-5",
   "temperature": 0.8,
-  "max_tokens": 400,
+  "max_tokens": 700,
   "response_format": { "type": "json_object" },
   "messages": [
     { "role": "system", "content": "<4절 프롬프트 핵심 규칙 + 출력 JSON 스키마>" },
@@ -936,18 +979,18 @@ POST /answer (202)
 
 **응답 파싱**
 ```
-choices[0].message.content  →  JSON 파싱  →  AiResult{summary, keywords[], nextQuestion}
+choices[0].message.content  →  프롬프트 ①: trim 후 질문 문자열 / 프롬프트 ②: JSON 파싱 → FollowUpResult{keywords[], nextQuestion}
 ```
 파싱 실패 시 `failureReason = LLM_INVALID_RESPONSE`. `usage.total_tokens`는 `generation_context`에 함께 저장해 크레딧 소모를 추적한다.
 
 **설정 (`application.properties`)**
 ```properties
 icelink.ai.base-url=https://ai.cs.kookmin.ac.kr/v1
-icelink.ai.model=claude-haiku-4-5
+icelink.ai.model=claude-opus-5
 icelink.ai.api-key=${ICELINK_AI_API_KEY}
 icelink.ai.connect-timeout=3s
 icelink.ai.read-timeout=15s
-icelink.ai.max-tokens=400
+icelink.ai.max-tokens=700
 ```
 키 값은 환경 변수 `ICELINK_AI_API_KEY`로만 주입한다. 로컬 개발은 `application-local.properties`(gitignore 대상) 또는 IDE 실행 구성의 환경 변수를 사용한다. **키를 문서·코드·커밋에 넣지 않는다.**
 
@@ -1020,7 +1063,7 @@ teamNo 를 1부터 순차 부여 (카테고리 순 → 팀 순), name = "{teamNo
 - Rate limit: `/users/**` 는 `Bucket4j` 기반 IP당 분당 30회 필터 (또는 해커톤 범위에선 생략)
 - SSE: `SseEmitter` + 방/팀 단위 `ConcurrentHashMap<Long, List<SseEmitter>>` 레지스트리. `room_events` INSERT 후 발행 (재전송 근거)
 - 상태 전이: `TeamStatus` enum 내부에 `canTransitionTo()` 정의, 서비스에서 `@Version` 낙관적 락으로 중복 전이 차단
-- AI 추상화: `ConversationAiClient` 인터페이스 하나(`process(ctx) → AiResult{summary, keywords, nextQuestion}`). 구현체는 4.1절의 `KookminGatewayAiClient`. 테스트용 `StubAiClient`는 `@Profile("test")`. `FallbackQuestionPool`은 카테고리별 질문 10개씩 `resources/fallback-questions.yml`에 두고 항상 등록. STT 구현 없음 (프론트 담당)
+- AI 추상화: `QuestionAiClient` 인터페이스에 메서드 둘 — `generateFirstQuestion(ctx) → String` (프롬프트 ①), `generateFollowUp(ctx) → FollowUpResult{keywords, nextQuestion}` (프롬프트 ②). 구현체는 4.4절의 `KookminGatewayAiClient`. 테스트용 `StubAiClient`는 `@Profile("test")`. `FallbackQuestionPool`은 카테고리별 질문 10개씩 `resources/fallback-questions.yml`에 두고 항상 등록. STT 구현 없음 (프론트 담당)
 - 비동기: `@EnableAsync` + 전용 `ThreadPoolTaskExecutor(core 4, max 8, queue 100)`. 비동기 메서드는 별도 `@Transactional` 경계에서 엔티티를 다시 조회 (detached 엔티티 넘기지 않음)
 - 데이터 접근: Spring Data JPA. 엔티티는 `user`(PK `String userKey`), `room`, `participant`, `team`, `teamQuestion`, `teamAnswer`, `roomEvent`. 연관은 `@ManyToOne(fetch = LAZY)`만 쓰고 컬렉션 매핑은 피한다 (N+1 방지, 목록은 Repository 쿼리로). `keywords` 배열은 Hibernate 7 `@JdbcTypeCode(SqlTypes.ARRAY)` 또는 `String` 조인 컬럼 중 하나로 통일. `interest_category`/`category`는 `@Enumerated(EnumType.STRING)`
 - 팀 빌딩: `TeamBuilder` 는 순수 함수(입력 리스트 → 팀 리스트)로 분리해 JPA 없이 단위 테스트. 5절 예시를 테스트 케이스로 고정

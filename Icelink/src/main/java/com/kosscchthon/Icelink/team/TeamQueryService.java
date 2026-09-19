@@ -10,7 +10,13 @@ import com.kosscchthon.Icelink.room.RoomAccessChecker;
 import com.kosscchthon.Icelink.team.dto.HostTeamResponse;
 import com.kosscchthon.Icelink.team.dto.TeamDetailResponse;
 import com.kosscchthon.Icelink.team.dto.TeamMemberView;
+import com.kosscchthon.Icelink.team.session.TeamAnswer;
+import com.kosscchthon.Icelink.team.session.TeamAnswerRepository;
+import com.kosscchthon.Icelink.team.session.TeamQuestion;
+import com.kosscchthon.Icelink.team.session.TeamQuestionRepository;
+import com.kosscchthon.Icelink.team.session.dto.TeamQuestionResponse;
 import com.kosscchthon.Icelink.user.User;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,7 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 팀 조회. 세션 진행(질문·답변)은 3.5 TeamSessionService. */
+/** 팀 조회. 세션 진행(질문·답변)은 team.session.TeamSessionService. */
 @Service
 @RequiredArgsConstructor
 public class TeamQueryService {
@@ -28,13 +34,15 @@ public class TeamQueryService {
     private final ParticipantAccessChecker participantAccessChecker;
     private final TeamRepository teamRepository;
     private final ParticipantRepository participantRepository;
+    private final TeamQuestionRepository questionRepository;
+    private final TeamAnswerRepository answerRepository;
 
     /** GET /teams/{teamId} — 팀원|호스트 */
     @Transactional(readOnly = true)
     public TeamDetailResponse getTeam(Long teamId, User user) {
         Team team = teamAccessChecker.getTeam(teamId);
         teamAccessChecker.requireMemberOrHost(team, user.getUserKey());
-        return TeamDetailResponse.from(team, membersFor(team, user.getUserKey()));
+        return detail(team, user.getUserKey());
     }
 
     /** GET /rooms/{code}/me/team — 참가자. 미배정이면 404 TEAM_NOT_FOUND */
@@ -45,7 +53,7 @@ public class TeamQueryService {
         if (team == null) {
             throw new IcelinkException(ErrorCode.TEAM_NOT_FOUND, "아직 팀이 배정되지 않았습니다.");
         }
-        return TeamDetailResponse.from(team, membersFor(team, user.getUserKey()));
+        return detail(team, user.getUserKey());
     }
 
     /** GET /host/rooms/{code}/teams — 호스트 */
@@ -60,15 +68,28 @@ public class TeamQueryService {
                 .findAllByRoom_IdAndTeamIsNotNullOrderByIdAsc(room.getId()).stream()
                 .collect(Collectors.groupingBy(p -> p.getTeam().getId()));
         return teams.stream()
-                .map(t -> HostTeamResponse.from(t, membersByTeam.getOrDefault(t.getId(), List.of()).stream()
-                        .map(TeamMemberView::forHost)
-                        .toList()))
+                .map(t -> HostTeamResponse.from(t,
+                        membersByTeam.getOrDefault(t.getId(), List.of()).stream().map(TeamMemberView::forHost).toList(),
+                        currentQuestion(t.getId())))
                 .toList();
     }
 
-    private List<TeamMemberView> membersFor(Team team, String viewerUserKey) {
-        return participantRepository.findAllByTeam_IdOrderByIdAsc(team.getId()).stream()
+    // ---- 내부 ----
+
+    private TeamDetailResponse detail(Team team, String viewerUserKey) {
+        List<TeamMemberView> members = participantRepository.findAllByTeam_IdOrderByIdAsc(team.getId()).stream()
                 .map(p -> TeamMemberView.forParticipant(p, viewerUserKey))
                 .toList();
+        LinkedHashSet<String> keywords = new LinkedHashSet<>();
+        for (TeamAnswer a : answerRepository.findAllByQuestion_Team_IdOrderByQuestion_OrderNoAsc(team.getId())) {
+            keywords.addAll(a.getKeywords());
+        }
+        return TeamDetailResponse.from(team, members, currentQuestion(team.getId()), List.copyOf(keywords));
+    }
+
+    private TeamQuestionResponse currentQuestion(Long teamId) {
+        return questionRepository.findFirstByTeam_IdOrderByOrderNoDesc(teamId)
+                .map((TeamQuestion q) -> TeamQuestionResponse.from(q, answerRepository.findByQuestionId(q.getId()).orElse(null)))
+                .orElse(null);
     }
 }
