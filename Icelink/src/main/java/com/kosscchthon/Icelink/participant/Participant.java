@@ -3,8 +3,11 @@ package com.kosscchthon.Icelink.participant;
 import com.kosscchthon.Icelink.common.error.ErrorCode;
 import com.kosscchthon.Icelink.common.error.IcelinkException;
 import com.kosscchthon.Icelink.room.Room;
+import com.kosscchthon.Icelink.survey.PersonalitySurvey;
 import com.kosscchthon.Icelink.user.User;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -15,10 +18,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.MapKeyColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,8 +45,6 @@ import lombok.NoArgsConstructor;
 public class Participant {
 
     public static final int NICKNAME_MAX_LENGTH = 12;
-    public static final int EXTROVERSION_MIN = 6;
-    public static final int EXTROVERSION_MAX = 30;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -68,6 +72,13 @@ public class Participant {
     /** 성격 6문항 점수 합 (6~30). 성격 제출 전 null. */
     @Column(name = "extroversion_score")
     private Integer extroversionScore;
+
+    /** 성격 문항별 점수 (question_no → score). 재제출 시 전체 교체. survey_answers 테이블. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "survey_answers", joinColumns = @JoinColumn(name = "participant_id"))
+    @MapKeyColumn(name = "question_no")
+    @Column(name = "score", nullable = false)
+    private Map<Integer, Integer> personalityAnswers = new HashMap<>();
 
     @Column(name = "joined_at", nullable = false)
     private Instant joinedAt;
@@ -117,6 +128,11 @@ public class Participant {
         return isPersonalityDone() && isCategoryDone();
     }
 
+    /** 문항별 답 (읽기 전용 복사). 성격 미제출이면 빈 맵. */
+    public Map<Integer, Integer> getPersonalityAnswers() {
+        return Map.copyOf(personalityAnswers);
+    }
+
     // ---- 변경 ----
 
     /** 나간 뒤 다시 들어올 때. 설문은 초기화한다. */
@@ -128,6 +144,7 @@ public class Participant {
         this.status = ParticipantStatus.JOINED;
         this.interestCategory = null;
         this.extroversionScore = null;
+        this.personalityAnswers.clear();
         this.joinedAt = now;
         this.leftAt = null;
     }
@@ -142,13 +159,17 @@ public class Participant {
         this.leftAt = now;
     }
 
-    /** 3.3 설문: 성격 점수 합 저장. 둘 다 완료되면 SURVEY_DONE. */
-    public void submitPersonality(int extroversionScore) {
+    /**
+     * 3.3 설문: 성격 6문항 답을 저장하고 합을 외향 점수로 기록한다. 재제출 시 전체 교체.
+     * 둘 다 완료되면 SURVEY_DONE.
+     * @throws IllegalArgumentException 문항 수·번호·점수 범위 위반
+     */
+    public void submitPersonality(Map<Integer, Integer> answers) {
         requireSurveyEditable();
-        if (extroversionScore < EXTROVERSION_MIN || extroversionScore > EXTROVERSION_MAX) {
-            throw new IllegalArgumentException("extroversion score out of range: " + extroversionScore);
-        }
-        this.extroversionScore = extroversionScore;
+        int sum = PersonalitySurvey.validateAndSum(answers);
+        this.personalityAnswers.clear();
+        this.personalityAnswers.putAll(answers);
+        this.extroversionScore = sum;
         refreshSurveyStatus();
     }
 

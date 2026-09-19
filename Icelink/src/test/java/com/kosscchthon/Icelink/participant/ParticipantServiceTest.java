@@ -20,6 +20,7 @@ import com.kosscchthon.Icelink.realtime.RoomEvent;
 import com.kosscchthon.Icelink.realtime.RoomEventPublisher;
 import com.kosscchthon.Icelink.realtime.RoomEventType;
 import com.kosscchthon.Icelink.room.Room;
+import com.kosscchthon.Icelink.survey.SurveyTestFixtures;
 import com.kosscchthon.Icelink.room.RoomAccessChecker;
 import com.kosscchthon.Icelink.room.RoomRepository;
 import com.kosscchthon.Icelink.room.RoomStatus;
@@ -145,7 +146,7 @@ class ParticipantServiceTest {
         @Test
         void rejoinAfterLeaving_reactivatesSameRow() throws Exception {
             Participant left = activeParticipant(GUEST, "민수", 101L);
-            left.submitPersonality(20);
+            left.submitPersonality(SurveyTestFixtures.answers(4, 3, 3, 4, 3, 3));
             left.leave(NOW.minusSeconds(10));
             when(participantRepository.findByRoom_IdAndUser_UserKey(12L, GUEST.getUserKey())).thenReturn(Optional.of(left));
             when(participantRepository.findActiveParticipation(any(), any())).thenReturn(Optional.empty());
@@ -254,7 +255,7 @@ class ParticipantServiceTest {
         @Test
         void returnsParticipantRoomAndSurveyView_teamNullBeforeBuilding() throws Exception {
             Participant me = activeParticipant(GUEST, "민수", 101L);
-            me.submitPersonality(24);
+            me.submitPersonality(SurveyTestFixtures.uniform(4));
             when(participantRepository.findByRoom_IdAndUser_UserKey(12L, GUEST.getUserKey())).thenReturn(Optional.of(me));
             when(participantRepository.countByRoom_IdAndStatusNot(12L, ParticipantStatus.LEFT)).thenReturn(7);
 
@@ -359,7 +360,7 @@ class ParticipantServiceTest {
         @Test
         void listsActiveParticipantsWithScoresAndCategory() throws Exception {
             Participant a = activeParticipant(GUEST, "민수", 101L);
-            a.submitPersonality(24);
+            a.submitPersonality(SurveyTestFixtures.uniform(4));
             a.selectCategory(InterestCategory.GAME);
             Participant b = activeParticipant(OTHER, "지현", 102L);
             when(participantRepository.findAllByRoom_IdAndStatusNotOrderByJoinedAtAsc(12L, ParticipantStatus.LEFT))

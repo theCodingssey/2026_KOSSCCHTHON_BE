@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.kosscchthon.Icelink.common.error.ErrorCode;
 import com.kosscchthon.Icelink.common.error.IcelinkException;
 import com.kosscchthon.Icelink.room.Room;
+import com.kosscchthon.Icelink.survey.SurveyTestFixtures;
 import com.kosscchthon.Icelink.user.User;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,7 +34,7 @@ class ParticipantTest {
     void survey_becomesSurveyDoneOnlyWhenBothPartsPresent() {
         Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
 
-        p.submitPersonality(24);
+        p.submitPersonality(SurveyTestFixtures.uniform(4));
         assertThat(p.getStatus()).isEqualTo(ParticipantStatus.JOINED);
         assertThat(p.isPersonalityDone()).isTrue();
 
@@ -43,17 +44,32 @@ class ParticipantTest {
     }
 
     @Test
-    void submitPersonality_rejectsOutOfRange() {
+    void submitPersonality_rejectsOutOfRangeOrWrongCount() {
         Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
 
-        assertThatThrownBy(() -> p.submitPersonality(5)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> p.submitPersonality(31)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> p.submitPersonality(SurveyTestFixtures.uniform(0))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> p.submitPersonality(SurveyTestFixtures.uniform(6))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> p.submitPersonality(java.util.Map.of(1, 3))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(p.isPersonalityDone()).isFalse();
+    }
+
+    @Test
+    void submitPersonality_storesAnswersAndSum_andResubmitReplaces() {
+        Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
+
+        p.submitPersonality(SurveyTestFixtures.answers(5, 5, 5, 5, 5, 5));
+        assertThat(p.getExtroversionScore()).isEqualTo(30);
+        assertThat(p.getPersonalityAnswers()).hasSize(6).containsEntry(3, 5);
+
+        p.submitPersonality(SurveyTestFixtures.answers(1, 2, 1, 2, 1, 2));
+        assertThat(p.getExtroversionScore()).isEqualTo(9);
+        assertThat(p.getPersonalityAnswers()).containsEntry(2, 2).containsEntry(3, 1);
     }
 
     @Test
     void leave_allowedBeforeAssignment_thenRejoinResetsSurvey() {
         Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
-        p.submitPersonality(20);
+        p.submitPersonality(SurveyTestFixtures.answers(4, 3, 3, 4, 3, 3));
         p.selectCategory(InterestCategory.FOOD);
 
         p.leave(NOW.plusSeconds(10));
@@ -72,7 +88,7 @@ class ParticipantTest {
     @Test
     void leave_rejectedAfterAssignment_andSurveyLockedAfterAssignment() {
         Participant p = Participant.join(ROOM, GUEST, "민수", NOW);
-        p.submitPersonality(20);
+        p.submitPersonality(SurveyTestFixtures.answers(4, 3, 3, 4, 3, 3));
         p.selectCategory(InterestCategory.FOOD);
         p.assign();
         assertThat(p.getStatus()).isEqualTo(ParticipantStatus.ASSIGNED);
@@ -92,7 +108,7 @@ class ParticipantTest {
         assertThat(p.getStatus()).isEqualTo(ParticipantStatus.LATE);
 
         Participant done = Participant.join(ROOM, GUEST, "민수", NOW);
-        done.submitPersonality(20);
+        done.submitPersonality(SurveyTestFixtures.answers(4, 3, 3, 4, 3, 3));
         done.selectCategory(InterestCategory.FOOD);
         assertThatThrownBy(done::markLate).isInstanceOf(IcelinkException.class);
     }

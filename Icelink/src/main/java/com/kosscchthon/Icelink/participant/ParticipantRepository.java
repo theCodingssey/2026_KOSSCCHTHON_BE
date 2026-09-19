@@ -17,6 +17,8 @@ public interface ParticipantRepository extends JpaRepository<Participant, Long> 
     /** LEFT 제외 인원 */
     int countByRoom_IdAndStatusNot(Long roomId, ParticipantStatus excluded);
 
+    int countByRoom_IdAndStatus(Long roomId, ParticipantStatus status);
+
     /** LEFT 제외, 입장 순 */
     List<Participant> findAllByRoom_IdAndStatusNotOrderByJoinedAtAsc(Long roomId, ParticipantStatus excluded);
 
