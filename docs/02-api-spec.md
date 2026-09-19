@@ -812,11 +812,14 @@ AI 생성은 비동기. 즉시 `202`를 반환하고 생성 완료 시 SSE `QUES
 |---|---|---|---|
 | 주최자 | `GET /host/rooms/{code}/events` | 호스트 | 방 전체 + 모든 팀 이벤트 |
 | 참가자 | `GET /rooms/{code}/me/events` | 참가자 | 방 이벤트 + 자기 팀 이벤트 |
-| 팀 | `GET /teams/{teamId}/events` | 팀원\|호스트 | 해당 팀 이벤트만 |
+| 팀 | `GET /teams/{teamId}/events` | 팀원|호스트 | 해당 팀 이벤트 + `ROOM_FINISHED` (팀 화면이 종료를 알 수 있도록) |\|호스트 | 해당 팀 이벤트만 |
 
 - `Accept: text/event-stream`, 유저 키는 `X-User-Key` 헤더로. (Flutter SSE 패키지가 헤더를 지원하지 않는 경우 `?userKey=` 쿼리도 허용. 이 경우 접근 로그에 쿼리스트링을 남기지 않는다)
 - 서버는 15초마다 `: keep-alive` 코멘트 전송. 연결 타임아웃 30분 → 클라이언트 자동 재연결.
 - 재연결 시 `Last-Event-ID` 헤더에 마지막 `id`를 보내면 그 이후 이벤트를 `room_events`에서 재전송.
+- 접속 직후 서버가 `CONNECTED` 이벤트를 한 번 보낸다 (id 없음). data: `{scope, roomId, teamId, participantId, lastEventId, replayFrom}` — `lastEventId` 는 이 방의 현재 seq 라서 클라이언트가 재연결 기준점으로 저장해 두면 된다.
+- 브로드캐스트는 이벤트를 만든 트랜잭션이 **커밋된 뒤**에 나간다. 이벤트를 받고 바로 REST 로 조회하면 반영된 상태를 본다.
+- 참가자 스트림의 팀 이벤트 필터는 이벤트마다 현재 배정 팀을 확인하므로, 대기 화면에서 연결해 둔 스트림이 팀 빌딩 후에도 그대로 팀 이벤트를 받는다 (재연결 불필요).
 
 ### 3.2 이벤트 형식
 ```
@@ -835,8 +838,8 @@ data: {"roomId":12,"teamId":501,"occurredAt":"2026-09-19T10:05:00Z","payload":{.
 | `PARTICIPANT_SURVEY_DONE` | 방 | `{participantId, surveyDoneCount, participantCount}` | 설문 완료 |
 | `ROOM_UPDATED` | 방 | `{title, teamSize, finalQuestionCount}` | 방 설정·마무리 질문 수정 (질문 본문은 종료 전 참가자에게 보내지 않음) |
 | `TEAM_BUILDING_STARTED` | 방 | `{}` | 팀 빌딩 시작 |
-| `TEAM_BUILDING_COMPLETED` | 방 | `{teamCount, myTeam: {teamId, teamNo, name, category, members[]} \|myTeam: {teamId, name, keywords: string[]} | null}` | 팀 빌딩 완료 (참가자 스트림엔 `myTeam` 채움) |
-| `ROOM_FINISHED` | 방 | `{finishedAt, finalQuestions: string[], myTeam: {teamId, name, keywords: string[]} | null}`\| null}` | 주최자 종료. 참가자 화면은 이 이벤트로 마무리 질문 화면 전환 |
+| `TEAM_BUILDING_COMPLETED` | 방 | `{teamCount, myTeam: {teamId, teamNo, name, category, members[{participantId, nickname, isMe}]} | null}` | 팀 빌딩 완료. 주최자 스트림엔 `{teamCount, assignedCount, lateCount, assignments[]}`, 참가자 스트림엔 `myTeam` 채움 |
+| `ROOM_FINISHED` | 방 | `{finishedAt, finalQuestions: string[], myTeam: {teamId, name, keywords: string[]} | null}` | 주최자 종료. 참가자 화면은 이 이벤트로 마무리 질문 화면 전환. `myTeam` 은 참가자 스트림에서만 |
 | `TEAM_STARTED` | 팀 | `{teamId, currentQuestion}` | 모두 모였어요 |
 | `TEAM_NAME_CHANGED` | 팀+방 | `{teamId, teamNo, name, isDefaultName, updatedBy}` | 팀명 수정 (기본값 복원 포함) |
 | `TEAM_STATUS_CHANGED` | 방 | `{teamId, teamNo, status, questionCount}` | 팀 상태 전이 (주최자 모니터링) |
