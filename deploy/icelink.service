@@ -1,0 +1,24 @@
+# systemd 유닛 (선택). 재부팅 후 자동 시작·장애 시 재시작이 필요할 때 사용.
+# 설치:
+#   sudo cp icelink.service /etc/systemd/system/icelink.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now icelink
+# 로그: journalctl -u icelink -f
+
+[Unit]
+Description=Ice-Link API (Spring Boot)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fbwoals
+WorkingDirectory=/home/fbwoals/icelink
+EnvironmentFile=/home/fbwoals/icelink.env
+ExecStart=/usr/bin/env java -jar /home/fbwoals/icelink/Icelink.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

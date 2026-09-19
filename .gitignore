@@ -1,0 +1,30 @@
+# Gradle
+Icelink/.gradle/
+Icelink/build/
+!Icelink/gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+out/
+
+# 로컬 설정 / 비밀값 (API 키 등은 절대 커밋하지 않음)
+Icelink/src/main/resources/application-local.properties
+Icelink/src/main/resources/application-local.yml
+.env
+.env.*
+deploy/icelink.env
+!deploy/icelink.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
