@@ -1,5 +1,7 @@
 # Ice-Link 배포 가이드
 
+> **참고**: Docker + GitHub Actions 자동 배포로 전환했다 → [`05-docker-deploy.md`](./05-docker-deploy.md). 이 문서는 수동 `java -jar` 배포 기록이며 둘을 동시에 쓰면 8080 이 충돌한다.
+
 > 대상 서버: `fbwoals@fbwoalszz.iptime.org` (Linux) · 실행 방식: `java -jar`
 > 환경 변수 파일: `/home/fbwoals/icelink.env`
 

@@ -3,3 +3,9 @@
 *.service       text eol=lf
 *.env.example   text eol=lf
 gradlew         text eol=lf
+
+# Docker/CI 파일도 LF 고정 (서버·리눅스 러너에서 실행)
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.conf          text eol=lf
+.dockerignore   text eol=lf
